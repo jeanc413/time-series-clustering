@@ -10,7 +10,7 @@ from tslearn.metrics import SquaredEuclidean, SoftDTW
 
 from tslearn.barycenters.euclidean import euclidean_barycenter
 
-__author__ = "Romain Tavenard romain.tavenard[at]univ-rennes2.fr"
+__reference__ = "Romain Tavenard romain.tavenard[at]univ-rennes2.fr"
 
 
 def _set_weights(w, n):
@@ -108,6 +108,7 @@ def soft_dtw_barycenter(
     ----------
     [1] M. Cuturi, M. Blondel "Soft-DTW: a Differentiable Loss Function for
        Time-Series," ICML 2017.
+
     """
     timeseries_data_ = to_time_series_dataset(timeseries_data)
     weights = _set_weights(weights, len(timeseries_data))
