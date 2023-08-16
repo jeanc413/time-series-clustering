@@ -1,6 +1,5 @@
 # Code for soft DTW is by Mathieu Blondel under Simplified BSD license
 
-import numpy
 import numpy as np
 from scipy.optimize import minimize
 
@@ -10,13 +9,28 @@ from tslearn.metrics import SquaredEuclidean, SoftDTW
 
 from tslearn.barycenters.euclidean import euclidean_barycenter
 
-__reference__ = "Romain Tavenard romain.tavenard[at]univ-rennes2.fr"
+__reference__ = "Module from tslear.barycenter library, modified to handle series from multiple lengths"
 
 
 def _set_weights(w, n):
-    """Provides a set of weights that fulfills the shape of a unitary vector"""
+    """Provides a set of weights that fulfills the shape of a unitary vector
+
+    Parameters
+    ----------
+    w : list | np.ndarray
+        Weights provided for barycenter averaging. If None, equally sized weights will be assigned
+    n : int
+
+    Returns
+    -------
+    w : np.ndarray
+
+
+    """
+    if isinstance(w, list):
+        w = np.array(w)
     if w is None or len(w) != n:
-        w = numpy.ones(n)
+        w = np.ones(n)
     if not np.isclose(w.sum(), 1):
         w = w / w.sum()
     return w
@@ -28,7 +42,7 @@ def __soft_dtw_func(
     # Compute objective value and grad at Z.
     barycenter_to_eval = np.nan_to_num(barycenter_to_eval)
     barycenter_to_eval = barycenter_to_eval.reshape(barycenter_shape)
-    barycenter_gradient = numpy.zeros_like(barycenter_to_eval)
+    barycenter_gradient = np.zeros_like(barycenter_to_eval)
     objective = 0
 
     if len(timeseries_data) != len(weights):
@@ -63,7 +77,7 @@ def soft_dtw_barycenter(
 
     Parameters
     ----------
-    timeseries_data : array-like, shape=(n_ts, sz, d)
+    timeseries_data : array-like, shape=(n_ts, sz, d) | list[np.ndarray]
         Time series dataset.
     gamma: float
         Regularization parameter.
@@ -116,8 +130,10 @@ def soft_dtw_barycenter(
     if barycenter is None:
         # does a simple numpy.average using the provided weights
         if check_equal_size(timeseries_data_):
+            # noinspection PyTypeChecker
             barycenter = euclidean_barycenter(timeseries_data_, weights=weights)
         else:
+            # noinspection PyTypeChecker
             barycenter = euclidean_barycenter(
                 TimeSeriesResampler(sz=timeseries_data_.shape[1]).fit_transform(
                     timeseries_data_
