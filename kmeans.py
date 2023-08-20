@@ -79,7 +79,7 @@ class KMeans:
         self.centroids = []
         self.centroids_old = []
 
-    def predict(self, centroids=None):
+    def fit(self, centroids=None):
         """
         Class method to execute clustering.
 
@@ -137,20 +137,31 @@ class KMeans:
         clusters = [[] for _ in range(self.k)]
         # Checks for each timeseries the closest centroid and returns this as clusters list
         for idx, sample in enumerate(self.series_list):
-            centroids_idx = self._closest_centroid(
-                sample, centroids, self.distance_measure
-            )
+            centroids_idx = self.predict(sample)
             clusters[centroids_idx].append(idx)
         return clusters
 
-    @staticmethod
-    def _closest_centroid(
-        observation: np.ndarray, centroids: np.ndarray, distance_measure
-    ):
+    def predict(self, observation: np.ndarray):
+        """Given an observation of the same dimension as the timeseries defined in this class,
+        it will return the closest centroid position (Therefore, the cluster where this observation belongs)
+
+        This class is used as one of the internal methods to fit data
+
+        Parameters
+        ----------
+        observation : np.ndarray
+            Data point to be compared to any of the defined centroids
+
+        Returns
+        -------
+        int
+            Representation to the closest centroid (cluster where it belongs)
+
+        """
         # Computes the distance from the current sample to all existent centroids
         # Checks the closest centroid and returns its index
         closest_idx = np.argmin(
-            [distance_measure(observation, point) for point in centroids]
+            [self.distance_measure(observation, point) for point in self.centroids]
         )
         return int(closest_idx)
 
