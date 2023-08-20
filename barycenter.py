@@ -12,7 +12,7 @@ def euclidean_barycenter(timeseries_data, weights=None):
 
     Parameters
     ----------
-    timeseries_data : array-like, shape=(n_ts, sz, d)
+    timeseries_data : array-like
         Time series dataset.
 
     weights: None or array
@@ -21,7 +21,7 @@ def euclidean_barycenter(timeseries_data, weights=None):
 
     Returns
     -------
-    np.ndarray of shape (sz, d)
+    np.ndarray
         Barycenter of the provided time series dataset.
 
     Notes
