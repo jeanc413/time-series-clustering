@@ -1,5 +1,4 @@
 # Code for soft DTW is by Mathieu Blondel under Simplified BSD license
-
 import numpy as np
 from scipy.optimize import minimize
 
@@ -7,9 +6,43 @@ from tslearn.utils import to_time_series_dataset, check_equal_size
 from tslearn.preprocessing import TimeSeriesResampler
 from tslearn.metrics import SquaredEuclidean, SoftDTW
 
-from tslearn.barycenters.euclidean import euclidean_barycenter
 
-__reference__ = "Module from tslear.barycenter library, modified to handle series from multiple lengths"
+def euclidean_barycenter(timeseries_data, weights=None):
+    """Standard Euclidean barycenter computed from a set of time series.
+
+    Parameters
+    ----------
+    timeseries_data : array-like, shape=(n_ts, sz, d)
+        Time series dataset.
+
+    weights: None or array
+        Weights of each X[i]. Must be the same size as len(X).
+        If None, uniform weights are used.
+
+    Returns
+    -------
+    np.ndarray of shape (sz, d)
+        Barycenter of the provided time series dataset.
+
+    Notes
+    -----
+        This method requires a dataset of equal-sized time series
+
+    Examples
+    --------
+    >>> time_series = [[1, 2, 3, 4], [1, 2, 4, 5]]
+    >>> bar = euclidean_barycenter(time_series)
+    >>> bar.shape
+    (4, 1)
+    >>> bar
+    array([[1. ],
+           [2. ],
+           [3.5],
+           [4.5]])
+    """
+    timeseries_data = np.nan_to_num(to_time_series_dataset(timeseries_data))
+    weights = _set_weights(weights, timeseries_data.shape[0])
+    return np.average(timeseries_data, axis=0, weights=weights)
 
 
 def _set_weights(w, n):
@@ -40,7 +73,6 @@ def __soft_dtw_func(
     barycenter_to_eval, timeseries_data, weights, barycenter_shape, gamma
 ):
     # Compute objective value and grad at Z.
-    barycenter_to_eval = np.nan_to_num(barycenter_to_eval)
     barycenter_to_eval = barycenter_to_eval.reshape(barycenter_shape)
     barycenter_gradient = np.zeros_like(barycenter_to_eval)
     objective = 0
@@ -124,7 +156,7 @@ def soft_dtw_barycenter(
        Time-Series," ICML 2017.
 
     """
-    timeseries_data_ = to_time_series_dataset(timeseries_data)
+    timeseries_data_ = np.nan_to_num(to_time_series_dataset(timeseries_data))
     weights = _set_weights(weights, len(timeseries_data))
 
     if barycenter is None:
