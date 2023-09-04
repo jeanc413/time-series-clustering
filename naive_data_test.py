@@ -20,7 +20,7 @@ from tslearn.barycenters import dtw_barycenter_averaging
 from tslearn.generators import random_walks
 from tslearn.metrics import dtw, soft_dtw
 
-import kmeans
+import clustering
 from barycenter import euclidean_barycenter, soft_dtw_barycenter
 from utils import CaptureData, euclidean_distance_lc, ClusterScores
 
@@ -65,7 +65,7 @@ print(f"Test label distribution {Counter(test_labels)}")
 
 # %% euclidean
 t_i = time()
-alg_euclidean = kmeans.KMeans(
+alg_euclidean = clustering.KMeans(
     series_list=train_data,
     k=k,
     distance_measure=euclidean_distance_lc,
@@ -82,7 +82,7 @@ scores_euclidean.print_scores()
 
 # %% dtw, gamma = 0
 t_i = time()
-alg_dtw_g0 = kmeans.KMeans(
+alg_dtw_g0 = clustering.KMeans(
     series_list=train_data,
     k=k,
     distance_measure=dtw,
@@ -99,7 +99,7 @@ scores_dtw_g0.print_scores()
 
 # %% soft-dtw, gamma = 1
 t_i = time()
-alg_sdtw_g1 = kmeans.KMeans(series_list=train_data, k=k)
+alg_sdtw_g1 = clustering.KMeans(series_list=train_data, k=k)
 alg_sdtw_g1.fit()
 t_f = time()
 runtimes["alg_sdtw_g1"] = t_f - t_i
@@ -111,7 +111,7 @@ scores_sdtw_g1.print_scores()
 
 # %% soft-dtw, gamma = 2
 t_i = time()
-alg_sdtw_g2 = kmeans.KMeans(
+alg_sdtw_g2 = clustering.KMeans(
     series_list=train_data,
     k=k,
     distance_measure=lambda s1, s2: soft_dtw(s1, s2, gamma=2),

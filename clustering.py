@@ -2,10 +2,19 @@ from operator import itemgetter
 import numpy as np
 from sdtw import SoftDTW
 from sdtw.distance import SquaredEuclidean
-from tslearn.metrics import soft_dtw
+from tslearn.metrics import (
+    soft_dtw,
+    cdist_soft_dtw,
+    cdist_soft_dtw_normalized,
+    cdist_gak,
+    cdist_dtw,
+    cdist_ctw,
+    cdist_sax,
+    ctw,
+)
 
 from barycenter import soft_dtw_barycenter
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Generator, LiteralString, Literal
 from warnings import warn
 
 
@@ -42,6 +51,7 @@ class KMeans:
         compute_barycenter: Callable[
             [Iterable[np.ndarray]], np.ndarray
         ] = soft_dtw_barycenter,
+        state: Generator = None,
         max_iterations: int = 100,
     ):
         """KMeans clustering for timeseries.
@@ -64,6 +74,7 @@ class KMeans:
         self.k = k
         self.distance_measure = distance_measure
         self.compute_barycenter = compute_barycenter
+        self.state = state if state is not None else np.random.default_rng()
         self.max_iterations = max_iterations
 
         # initialize clustering parameters
@@ -97,7 +108,7 @@ class KMeans:
 
         # initialize centroids
         if centroids is None:
-            self.centroids = np.random.choice(
+            self.centroids = self.state.choice(
                 len(self.series_list), self.k, replace=False
             )
             self.centroids = [self.series_list[i] for i in self.centroids]
@@ -109,7 +120,7 @@ class KMeans:
             self.clusters_old = clusters_old = self.clusters.copy()
 
             # update clusters
-            self.clusters = self._create_clusters(self.centroids)
+            self.clusters = self._create_clusters()
 
             # update centroids
             self.centroids = self._get_centroids(self.clusters)
@@ -132,7 +143,7 @@ class KMeans:
                 labels[sample_idx] = cluster_idx
         return labels
 
-    def _create_clusters(self, centroids):
+    def _create_clusters(self):
         # Init temporal empty cluster
         clusters = [[] for _ in range(self.k)]
         # Checks for each timeseries the closest centroid and returns this as clusters list
@@ -183,3 +194,124 @@ class KMeans:
         yield all(a.shape == b.shape for a, b in zip(centroids_old, self.centroids))
         yield clusters_old == self.clusters
         yield all(np.allclose(a, b) for a, b in zip(centroids_old, self.centroids))
+
+
+class DBScan:
+    implemented = {
+        "cdist_soft_dtw": cdist_soft_dtw,
+        "cdist_soft_dtw_normalized": cdist_soft_dtw_normalized,
+        "cdist_gak": cdist_gak,
+        "cdist_dtw": cdist_dtw,
+        "cdist_ctw": cdist_ctw,
+        "cdist_sax": cdist_sax,
+        "ctw": ctw,
+    }
+
+    def __init__(
+        self,
+        series_list: list[np.ndarray] | np.ndarray[np.ndarray],
+        distance_base: str = "cdist_soft_dtw",
+        epsilon: float | str = 0.5,
+        min_pts: int = 5,
+        distance_base_kwargs: dict = None,
+    ):
+        self.series_list = series_list
+        self.distance_base = distance_base
+        self.__epsilon = epsilon
+        self.__min_pts = min_pts
+        self.distance_base_kwargs = (
+            distance_base_kwargs if distance_base_kwargs is not None else {}
+        )
+
+        if distance_base_kwargs:
+            self.cross_matrix: np.ndarray = self.implemented[distance_base](
+                series_list, **distance_base_kwargs
+            )
+        else:
+            self.cross_matrix: np.ndarray = self.implemented[distance_base](series_list)
+
+        # noinspection PyTypeChecker
+        self.node_definer: np.ndarray = self.cross_matrix <= epsilon
+        np.fill_diagonal(self.node_definer, np.False_)
+
+        self.labels = {a: None for a in range(len(series_list))}
+        self.assign_as_noise()
+
+    @property
+    def epsilon(self):
+        return self.__epsilon
+
+    @epsilon.setter
+    def epsilon(self, value):
+        self.__epsilon = value
+        self.node_definer = self.cross_matrix <= value
+        np.fill_diagonal(self.node_definer, np.False_)
+        self.assign_as_noise()
+
+    @property
+    def min_pts(self):
+        return self.__min_pts
+
+    @min_pts.setter
+    def min_pts(self, val):
+        self.__min_pts = val
+        self.assign_as_noise()
+
+    def assign_as_noise(self):
+        definer = self.node_definer.sum(axis=1)
+        definer = definer < self.__min_pts
+        for i in np.where(definer)[0]:
+            self.labels[i] = -1
+
+    def verify_epsilon(
+        self, mode: Literal["min", "mean", "median"] = "min", epsilon: float = None
+    ):
+        if epsilon is None:
+            epsilon = self.epsilon
+        flat: np.ndarray = self.cross_matrix.copy()
+        np.fill_diagonal(flat, np.nan)
+        match mode:
+            case "min":
+                result = np.nanmin(flat) < epsilon
+            case "mean":
+                result = np.nanmean(flat) < epsilon
+            case "media":
+                result = np.nanmedian(flat) < epsilon
+            case _:
+                raise AttributeError(f"{mode=} is not implemented.")
+        return result
+
+    def suggest_epsilon(self):
+        flat: np.ndarray = self.cross_matrix.copy()
+        np.fill_diagonal(flat, np.nan)
+        return {
+            "min": np.nanmin(flat),
+            "mean": np.nanmean(flat),
+            "media": np.nanmedian(flat),
+            "max": np.nanmax(flat),
+            "current": self.__epsilon,
+        }
+
+    def assign_nodes(self):
+        current_label = -1
+        for key, val in self.labels.items():
+            if val is not None:
+                continue
+            current_label += 1
+            seed_set_old = np.array([])
+            seed_set = np.where(self.node_definer[key])[0]
+
+            while seed_set.shape != seed_set_old.shape:
+                try:
+                    seed_set_old = seed_set.copy()
+                    cores = self.node_definer[seed_set].sum(axis=0) >= self.min_pts
+                    cores = np.where(cores)[0]
+                    seed_set = np.unique(np.array(seed_set.tolist() + cores.tolist()))
+                except IndexError:
+                    print(f"{type(cores)=}_{cores=}")
+                    print(f"{type(seed_set)=}_{seed_set=}")
+                    raise
+            for neighbor in seed_set:
+                if self.labels[neighbor] is None or self.labels[neighbor] == -1:
+                    self.labels[neighbor] = current_label
+        return self.labels
