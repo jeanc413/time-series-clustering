@@ -139,6 +139,31 @@ def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = No
 
 
 class ClusterScores:
+    """Handles the generation of scores for a set of provided true labels and predicted labels.
+
+    Attributes
+    ----------
+    implemented : dict[str: func]
+        Dictionary with pairs of Score names and the implemented function for computation.
+        This is a class level attribute.
+    true_labels: list | np.ndarray
+        Labels for ground truth describing clusters.
+    pred_labels : list | np.ndarray
+        Predicted labels.
+    name : str, Optional
+        If desired a name value can be specified for traceability reasons.
+
+    Methods
+    -------
+    get_scores()
+        Returns a dictionary of pairs of `Name of Score` and the `score`
+    print_scores()
+        Prints the name of the score with the calculated score
+    get_specific_score(metric: str)
+        Given a name of a score, it will return the calculated value for that score
+
+    """
+
     implemented = {
         "Radon Index": rand_score,
         "Adjusted Radon Index": adjusted_rand_score,
@@ -149,7 +174,12 @@ class ClusterScores:
         "V Measure": v_measure_score,
     }
 
-    def __init__(self, true_labels: list | np.ndarray, pred_labels: list | np.ndarray):
+    def __init__(
+        self,
+        true_labels: list | np.ndarray,
+        pred_labels: list | np.ndarray,
+        name: str = None,
+    ):
         self.true_labels = (
             true_labels
             if isinstance(true_labels, np.ndarray)
@@ -160,18 +190,42 @@ class ClusterScores:
             if isinstance(pred_labels, np.ndarray)
             else np.asarray(pred_labels, dtype=np.int8)
         )
+        self.name = name
 
     def get_scores(self):
+        """Creates a dictionary of pairs of `Name of Score` and the `score`
+
+        Returns
+        -------
+        dict
+            Dictionary of pairs of `Name of Score` and the `score`
+
+        """
         return {
             name: func(self.true_labels, self.pred_labels)
             for name, func in self.implemented.items()
         }
 
     def print_scores(self):
+        """Prints the name of the score with the calculated score"""
         for name, result in self.get_scores().items():
             print(f"{name}=={result:.2%}")
+        print()
 
-    def get_specific_score(self, metric):
+    def get_specific_score(self, metric: str):
+        """Given a name of a score, it will return the calculated value for that score.
+
+        Parameters
+        ----------
+        metric : str
+            Name of the score to retrieve.
+
+        Returns
+        -------
+        float
+            Calculated score
+
+        """
         if metric not in self.implemented:
             raise AttributeError(
                 f"Score function {metric} not implemented."
