@@ -165,8 +165,8 @@ class ClusterScores:
     """
 
     implemented = {
-        "Radon Index": rand_score,
-        "Adjusted Radon Index": adjusted_rand_score,
+        "Rand Index": rand_score,
+        "Adjusted Rand Index": adjusted_rand_score,
         "Adjusted Mutual Info Score": adjusted_mutual_info_score,
         "Normalized Mutual Info Score": normalized_mutual_info_score,
         "Homogeneity Score": homogeneity_score,
@@ -191,6 +191,9 @@ class ClusterScores:
             else np.asarray(pred_labels, dtype=np.int8)
         )
         self.name = name
+
+    def __call__(self):
+        return self.get_scores()
 
     def get_scores(self):
         """Creates a dictionary of pairs of `Name of Score` and the `score`
