@@ -11,6 +11,7 @@ from sklearn.metrics import (
     completeness_score,
     v_measure_score,
 )
+from numba import njit
 
 
 class CaptureData(list):
@@ -97,6 +98,7 @@ def __difference_lc(s1, s2):
     return results
 
 
+@njit(nogil=True)
 def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = None):
     """Takes 2 timeseries and calculates the Euclidean distance between them.
     In case that this timeseries have different lengths, it will:
@@ -136,6 +138,12 @@ def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = No
         results = results * weights
 
     return np.linalg.norm(results)
+
+
+@njit(parallel=True)
+def c_euclidean_lc(series_list_1, series_list_2=None):
+    # TODO: finish me
+    pass
 
 
 class ClusterScores:
