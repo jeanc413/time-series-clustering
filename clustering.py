@@ -1,4 +1,7 @@
 from operator import itemgetter
+from typing import Callable, Iterable, Generator, Literal
+from warnings import warn
+
 import numpy as np
 from sdtw import SoftDTW
 from sdtw.distance import SquaredEuclidean
@@ -10,12 +13,10 @@ from tslearn.metrics import (
     cdist_dtw,
     cdist_ctw,
     cdist_sax,
-    ctw,
 )
-
+from tslearn.barycenters import dtw_barycenter_averaging, euclidean_barycenter
 from barycenter import soft_dtw_barycenter
-from typing import Callable, Iterable, Generator, LiteralString, Literal
-from warnings import warn
+from utils import euclidean_distance_lc
 
 
 def sdtw_euclidean(x: np.ndarray, y: np.ndarray, gamma: float = 0.5):
@@ -52,7 +53,7 @@ class KMeans:
             [Iterable[np.ndarray]], np.ndarray
         ] = soft_dtw_barycenter,
         state: Generator = None,
-        max_iterations: int = 100,
+        max_iterations: int = 10,
     ):
         """KMeans clustering for timeseries.
 
@@ -204,7 +205,6 @@ class DBScan:
         "cdist_dtw": cdist_dtw,
         "cdist_ctw": cdist_ctw,
         "cdist_sax": cdist_sax,
-        "ctw": ctw,
     }
 
     def __init__(
@@ -315,3 +315,164 @@ class DBScan:
                 if self.labels[neighbor] is None or self.labels[neighbor] == -1:
                     self.labels[neighbor] = current_label
         return self.labels
+
+
+class CKMeans:
+    # TODO: finish implementation
+    implemented = {
+        "soft_dtw": {"measure": cdist_soft_dtw, "barycenter": soft_dtw_barycenter},
+        "euclidean": {"measure": cdist_soft_dtw, "barycenter": euclidean_barycenter},
+        "dtw": {"measure": cdist_dtw, "barycenter": dtw_barycenter_averaging},
+    }
+
+    def __init__(
+        self,
+        series_list: list[np.ndarray] | np.ndarray[np.ndarray],
+        k: int = (6,),
+        distance_measure: Callable[[np.ndarray, np.ndarray], float] = soft_dtw,
+        compute_barycenter: Callable[
+            [Iterable[np.ndarray]], np.ndarray
+        ] = soft_dtw_barycenter,
+        state: Generator = None,
+        max_iterations: int = 10,
+    ):
+        """KMeans clustering for timeseries.
+
+        Parameters
+        ----------
+            series_list: list[np.ndarray] | np.ndarray[np.ndarray]
+                List of SubTensors objects to be clustered.
+            distance_measure: Callable[[np.ndarray, np.ndarray], float]
+                Computes the distance/similarity measure between 2 timeseries.
+            k: int
+                Number of clusters to build.
+            max_iterations: int
+                Admissible iterations to compute.
+
+        """
+        # capture input parameters
+
+        self.series_list = series_list
+        self.k = k
+        self.distance_measure = distance_measure
+        self.compute_barycenter = compute_barycenter
+        self.state = state if state is not None else np.random.default_rng()
+        self.max_iterations = max_iterations
+
+        # initialize clustering parameters
+        self.max_features = max(ser.shape for ser in series_list)
+        self.criteria = "Initialized"
+        self.iterations = 0
+
+        # list of sample indices inside each cluster
+        self.clusters = [[] for _ in range(self.k)]
+        self.clusters_old = [[] for _ in range(self.k)]
+
+        # mean feature tensor for each cluster
+        self.centroids = []
+        self.centroids_old = []
+
+    def fit(self, centroids=None):
+        """
+        Class method to execute clustering.
+
+        Parameters
+        ----------
+        centroids: list or None
+            List of tensors cores containing the centroid-tensors used to initialize the algorithm.
+            If `None` are provided, they randomly initialized from the provided cores
+
+        Returns
+        -------
+        numpy.ndarray containing the assigned cluster for each provided SubTensor object.
+
+        """
+
+        # initialize centroids
+        if centroids is None:
+            self.centroids = self.state.choice(
+                len(self.series_list), self.k, replace=False
+            )
+            self.centroids = [self.series_list[i] for i in self.centroids]
+
+        # Optimization
+        for _ in range(self.max_iterations):
+            self.iterations += 1
+            self.centroids_old = centroids_old = self.centroids.copy()
+            self.clusters_old = clusters_old = self.clusters.copy()
+
+            # update clusters
+            self.clusters = self._create_clusters()
+
+            # update centroids
+            self.centroids = self._get_centroids(self.clusters)
+
+            # check for convergence
+            if all(self._is_converged(centroids_old, clusters_old)):
+                self.criteria = "Converged"
+                break
+        else:
+            self.criteria = f"Reached iteration limit at iteration={self.iterations}"
+            warn("Algorithm stopped due to exceeding max iterations.")
+
+        return self._get_cluster_labels(self.clusters)
+
+    def _get_cluster_labels(self, clusters):
+        # Puts together on an array the assigned cluster for each tensor
+        labels = np.empty(len(self.series_list))
+        for cluster_idx, cluster in enumerate(clusters):
+            for sample_idx in cluster:
+                labels[sample_idx] = cluster_idx
+        return labels
+
+    def _create_clusters(self):
+        # Init temporal empty cluster
+        clusters = [[] for _ in range(self.k)]
+        # Checks for each timeseries the closest centroid and returns this as clusters list
+        for idx, sample in enumerate(self.series_list):
+            centroids_idx = self.predict(sample)
+            clusters[centroids_idx].append(idx)
+        return clusters
+
+    def predict(self, observation: np.ndarray):
+        """Given an observation of the same dimension as the timeseries defined in this class,
+        it will return the closest centroid position (Therefore, the cluster where this observation belongs)
+
+        This class is used as one of the internal methods to fit data
+
+        Parameters
+        ----------
+        observation : np.ndarray
+            Data point to be compared to any of the defined centroids
+
+        Returns
+        -------
+        int
+            Representation to the closest centroid (cluster where it belongs)
+
+        """
+        # Computes the distance from the current sample to all existent centroids
+        # Checks the closest centroid and returns its index
+        closest_idx = np.argmin(
+            [self.distance_measure(observation, point) for point in self.centroids]
+        )
+        return int(closest_idx)
+
+    def _get_centroids(self, clusters_list: list[list] | list[np.ndarray]):
+        series_in_cluster = (
+            itemgetter(*cluster)(self.series_list) for cluster in clusters_list
+        )
+        # if cluster is unitary, the centroid is the cluster unit q itself
+        centroids = [
+            self.compute_barycenter(clusters)
+            if isinstance(clusters, tuple)
+            else clusters
+            for clusters in series_in_cluster
+        ]
+        return centroids
+
+    def _is_converged(self, centroids_old, clusters_old):
+        # Verify if there's no more improvement for the current iteration and returns True as converging criteria
+        yield all(a.shape == b.shape for a, b in zip(centroids_old, self.centroids))
+        yield clusters_old == self.clusters
+        yield all(np.allclose(a, b) for a, b in zip(centroids_old, self.centroids))
