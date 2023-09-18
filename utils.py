@@ -11,7 +11,8 @@ from sklearn.metrics import (
     completeness_score,
     v_measure_score,
 )
-from numba import njit
+from numba import njit, prange
+import numba.typed as nbt
 
 
 class CaptureData(list):
@@ -91,10 +92,11 @@ class VisualizeSeries:
         self.fig.show()
 
 
+@njit(nogil=True)
 def __difference_lc(s1, s2):
     results = np.zeros(s2.shape)
     results[: len(s1)] = s1 - s2[: len(s1)]
-    results[len(s1) :] = s1[-1] - s2[len(s1) :]
+    results[len(s1):] = s1[-1] - s2[len(s1):]
     return results
 
 
@@ -141,9 +143,56 @@ def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = No
 
 
 @njit(parallel=True)
-def c_euclidean_lc(series_list_1, series_list_2=None):
-    # TODO: finish me
-    pass
+def __c_euclidean_lc(series_list_1: nbt.List[np.ndarray],
+                     series_list_2: nbt.List[np.ndarray] = None,
+                     self_similarity=False):
+
+    dists = np.zeros((len(series_list_1), len(series_list_2)))
+
+    for i in prange(len(series_list_1)):
+        s1 = series_list_1[i]
+        for j in prange(len(series_list_2)):
+            if self_similarity and j < i and dists[i, j] != 0:
+                dists[i, j] = dists[j, i]
+            else:
+                dists[i, j] = euclidean_distance_lc(s1, series_list_2[j])
+
+    return dists
+
+
+def c_euclidean(series_list_1: list[np.ndarray] | nbt.List[np.ndarray],
+                series_list_2: list[np.ndarray] | nbt.List[np.ndarray] = None):
+    """Computes matrix of Euclidean distances from 2 given timeseries lists.
+    If the second matrix is not provided, it computes a self distance squared matrix.
+
+    This is a wrapper for numba optimized functions. Therefore, to avoid casting computing,
+    it is recommended to cast lists[np.ndarray] tp numba.typed.List[np.ndarray].
+
+
+    Parameters
+    ----------
+    series_list_1 : list[np.ndarray] | nbt.List[np.ndarray]
+        First list of timeseries.
+    series_list_2 : list[np.ndarray] | nbt.List[np.ndarray] (Optional)
+        Second list of timeseries. Default is None. If None is provided, it will do a self distance matrix.
+
+    Returns
+    -------
+    dists : np.ndarray
+        Matrix containing distances between pairs of timeseries.
+
+    """
+    if isinstance(series_list_1, list):
+        series_list_1 = nbt.List(series_list_1)
+    if series_list_2 is not None and isinstance(series_list_2, list):
+        series_list_2 = nbt.List(series_list_2)
+
+    self_similarity = False
+    if series_list_2 is None:
+        series_list_2 = series_list_1
+        self_similarity = True
+
+    return __c_euclidean_lc(series_list_1=series_list_1, series_list_2=series_list_2, self_similarity=self_similarity)
 
 
 class ClusterScores:
@@ -156,7 +205,7 @@ class ClusterScores:
         This is a class level attribute.
     true_labels: list | np.ndarray
         Labels for ground truth describing clusters.
-    pred_labels : list | np.ndarray
+    predicted_labels : list | np.ndarray
         Predicted labels.
     name : str, Optional
         If desired a name value can be specified for traceability reasons.
@@ -164,7 +213,7 @@ class ClusterScores:
     Methods
     -------
     get_scores()
-        Returns a dictionary of pairs of `Name of Score` and the `score`
+        Returns a map of `Name of Score` and the `score`
     print_scores()
         Prints the name of the score with the calculated score
     get_specific_score(metric: str)
@@ -183,20 +232,20 @@ class ClusterScores:
     }
 
     def __init__(
-        self,
-        true_labels: list | np.ndarray,
-        pred_labels: list | np.ndarray,
-        name: str = None,
+            self,
+            true_labels: list | np.ndarray,
+            predicted_labels: list | np.ndarray,
+            name: str = None,
     ):
         self.true_labels = (
             true_labels
             if isinstance(true_labels, np.ndarray)
             else np.asarray(true_labels, dtype=np.int8)
         )
-        self.pred_labels = (
-            pred_labels
-            if isinstance(pred_labels, np.ndarray)
-            else np.asarray(pred_labels, dtype=np.int8)
+        self.predicted_labels = (
+            predicted_labels
+            if isinstance(predicted_labels, np.ndarray)
+            else np.asarray(predicted_labels, dtype=np.int8)
         )
         self.name = name
 
@@ -213,7 +262,7 @@ class ClusterScores:
 
         """
         return {
-            name: func(self.true_labels, self.pred_labels)
+            name: func(self.true_labels, self.predicted_labels)
             for name, func in self.implemented.items()
         }
 
@@ -242,4 +291,4 @@ class ClusterScores:
                 f"Score function {metric} not implemented."
                 f"The value must be one of {self.implemented.keys()}"
             )
-        return self.implemented[metric](self.true_labels, self.pred_labels)
+        return self.implemented[metric](self.true_labels, self.predicted_labels)
