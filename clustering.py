@@ -3,8 +3,6 @@ from typing import Callable, Iterable, Generator, Literal
 from warnings import warn
 
 import numpy as np
-from sdtw import SoftDTW
-from sdtw.distance import SquaredEuclidean
 from tslearn.metrics import (
     soft_dtw,
     cdist_soft_dtw,
@@ -16,31 +14,7 @@ from tslearn.metrics import (
 )
 from tslearn.barycenters import dtw_barycenter_averaging, euclidean_barycenter
 from barycenter import soft_dtw_barycenter
-from utils import euclidean_distance_lc
-
-
-def sdtw_euclidean(x: np.ndarray, y: np.ndarray, gamma: float = 0.5):
-    """Computes the soft dynamic time warping measure given a certain gamma value by using Euclidean Distance
-    to build the Alignment matrix
-
-    Parameters
-    ----------
-    x : np.ndarray
-        First timeseries to compare
-    y : np.ndarray
-        Second timeseries to compare
-    gamma : float > 0
-
-
-    Returns
-    -------
-    float
-        Computed distance between x and y given a certain gamma value for soft dynamic time warping
-
-    """
-    if gamma < 0:
-        raise AttributeError("Gamma value cannot be negative")
-    return SoftDTW(SquaredEuclidean(X=x, Y=y), gamma=gamma).compute()
+from utils import c_euclidean
 
 
 class KMeans:
@@ -302,15 +276,11 @@ class DBScan:
             seed_set = np.where(self.node_definer[key])[0]
 
             while seed_set.shape != seed_set_old.shape:
-                try:
-                    seed_set_old = seed_set.copy()
-                    cores = self.node_definer[seed_set].sum(axis=0) >= self.min_pts
-                    cores = np.where(cores)[0]
-                    seed_set = np.unique(np.array(seed_set.tolist() + cores.tolist()))
-                except IndexError:
-                    print(f"{type(cores)=}_{cores=}")
-                    print(f"{type(seed_set)=}_{seed_set=}")
-                    raise
+                seed_set_old = seed_set.copy()
+                cores = self.node_definer[seed_set].sum(axis=0) >= self.min_pts
+                cores = np.where(cores)[0]
+                seed_set = np.unique(np.array(seed_set.tolist() + cores.tolist()))
+
             for neighbor in seed_set:
                 if self.labels[neighbor] is None or self.labels[neighbor] == -1:
                     self.labels[neighbor] = current_label
@@ -321,7 +291,7 @@ class CKMeans:
     # TODO: finish implementation
     implemented = {
         "soft_dtw": {"measure": cdist_soft_dtw, "barycenter": soft_dtw_barycenter},
-        "euclidean": {"measure": cdist_soft_dtw, "barycenter": euclidean_barycenter},
+        "euclidean": {"measure": c_euclidean, "barycenter": euclidean_barycenter},
         "dtw": {"measure": cdist_dtw, "barycenter": dtw_barycenter_averaging},
     }
 
