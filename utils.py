@@ -96,7 +96,7 @@ class VisualizeSeries:
 def __difference_lc(s1, s2):
     results = np.zeros(s2.shape)
     results[: len(s1)] = s1 - s2[: len(s1)]
-    results[len(s1):] = s1[-1] - s2[len(s1):]
+    results[len(s1) :] = s1[-1] - s2[len(s1) :]
     return results
 
 
@@ -143,10 +143,11 @@ def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = No
 
 
 @njit(parallel=True)
-def __c_euclidean_lc(series_list_1: nbt.List[np.ndarray],
-                     series_list_2: nbt.List[np.ndarray] = None,
-                     self_similarity=False):
-
+def __c_euclidean_lc(
+    series_list_1: nbt.List[np.ndarray],
+    series_list_2: nbt.List[np.ndarray] = None,
+    self_similarity=False,
+):
     dists = np.zeros((len(series_list_1), len(series_list_2)))
 
     for i in prange(len(series_list_1)):
@@ -160,8 +161,10 @@ def __c_euclidean_lc(series_list_1: nbt.List[np.ndarray],
     return dists
 
 
-def c_euclidean(series_list_1: list[np.ndarray] | nbt.List[np.ndarray],
-                series_list_2: list[np.ndarray] | nbt.List[np.ndarray] = None):
+def c_euclidean(
+    series_list_1: list[np.ndarray] | nbt.List[np.ndarray],
+    series_list_2: list[np.ndarray] | nbt.List[np.ndarray] = None,
+):
     """Computes matrix of Euclidean distances from 2 given timeseries lists.
     If the second matrix is not provided, it computes a self distance squared matrix.
 
@@ -183,16 +186,20 @@ def c_euclidean(series_list_1: list[np.ndarray] | nbt.List[np.ndarray],
 
     """
     if isinstance(series_list_1, list):
-        series_list_1 = nbt.List(series_list_1)
+        series_list_1 = nbt.List(np.nan_to_num(s) for s in series_list_1)
     if series_list_2 is not None and isinstance(series_list_2, list):
-        series_list_2 = nbt.List(series_list_2)
+        series_list_2 = nbt.List(np.nan_to_num(s) for s in series_list_2)
 
     self_similarity = False
     if series_list_2 is None:
         series_list_2 = series_list_1
         self_similarity = True
 
-    return __c_euclidean_lc(series_list_1=series_list_1, series_list_2=series_list_2, self_similarity=self_similarity)
+    return __c_euclidean_lc(
+        series_list_1=series_list_1,
+        series_list_2=series_list_2,
+        self_similarity=self_similarity,
+    )
 
 
 class ClusterScores:
@@ -232,10 +239,10 @@ class ClusterScores:
     }
 
     def __init__(
-            self,
-            true_labels: list | np.ndarray,
-            predicted_labels: list | np.ndarray,
-            name: str = None,
+        self,
+        true_labels: list | np.ndarray,
+        predicted_labels: list | np.ndarray,
+        name: str = None,
     ):
         self.true_labels = (
             true_labels

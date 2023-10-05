@@ -1,8 +1,10 @@
 from operator import itemgetter
 from typing import Callable, Iterable, Generator, Literal
 from warnings import warn
+import functools
 
 import numpy as np
+from tslearn.barycenters import dtw_barycenter_averaging, euclidean_barycenter
 from tslearn.metrics import (
     soft_dtw,
     cdist_soft_dtw,
@@ -12,9 +14,9 @@ from tslearn.metrics import (
     cdist_ctw,
     cdist_sax,
 )
-from tslearn.barycenters import dtw_barycenter_averaging, euclidean_barycenter
+
 from barycenter import soft_dtw_barycenter
-from utils import c_euclidean
+from utils import c_euclidean, euclidean_distance_lc
 
 
 class KMeans:
@@ -173,6 +175,7 @@ class KMeans:
 
 class DBScan:
     implemented = {
+        "c_euclidean": c_euclidean,
         "cdist_soft_dtw": cdist_soft_dtw,
         "cdist_soft_dtw_normalized": cdist_soft_dtw_normalized,
         "cdist_gak": cdist_gak,
@@ -249,10 +252,12 @@ class DBScan:
                 result = np.nanmin(flat) < epsilon
             case "mean":
                 result = np.nanmean(flat) < epsilon
-            case "media":
+            case "median":
                 result = np.nanmedian(flat) < epsilon
             case _:
-                raise AttributeError(f"{mode=} is not implemented.")
+                raise AttributeError(
+                    f"{mode=} is not implemented.\nSee one of [min, mean, median]."
+                )
         return result
 
     def suggest_epsilon(self):
@@ -288,7 +293,6 @@ class DBScan:
 
 
 class CKMeans:
-    # TODO: finish implementation
     implemented = {
         "soft_dtw": {"measure": cdist_soft_dtw, "barycenter": soft_dtw_barycenter},
         "euclidean": {"measure": c_euclidean, "barycenter": euclidean_barycenter},
@@ -298,13 +302,11 @@ class CKMeans:
     def __init__(
         self,
         series_list: list[np.ndarray] | np.ndarray[np.ndarray],
-        k: int = (6,),
-        distance_measure: Callable[[np.ndarray, np.ndarray], float] = soft_dtw,
-        compute_barycenter: Callable[
-            [Iterable[np.ndarray]], np.ndarray
-        ] = soft_dtw_barycenter,
+        k: int = 6,
+        distance_measure: Literal["soft_dtw", "euclidean", "dtw"] = "soft_dtw",
         state: Generator = None,
         max_iterations: int = 10,
+        gamma: float = None,
     ):
         """KMeans clustering for timeseries.
 
@@ -321,13 +323,27 @@ class CKMeans:
 
         """
         # capture input parameters
+        if distance_measure != "soft_dtw" and gamma:
+            raise AttributeError(
+                f"Distance measure {distance_measure} cannot use gamma parameter."
+            )
 
         self.series_list = series_list
         self.k = k
-        self.distance_measure = distance_measure
-        self.compute_barycenter = compute_barycenter
+        self.mode = distance_measure
+        self.distance_measure = self.implemented[distance_measure]["measure"]
+        self.compute_barycenter = self.implemented[distance_measure]["barycenter"]
         self.state = state if state is not None else np.random.default_rng()
         self.max_iterations = max_iterations
+        self.gamma = gamma
+
+        if self.gamma is not None:
+            self.distance_measure = functools.partial(
+                self.distance_measure, gamma=self.gamma
+            )
+            self.compute_barycenter = functools.partial(
+                self.compute_barycenter, gamma=self.gamma
+            )
 
         # initialize clustering parameters
         self.max_features = max(ser.shape for ser in series_list)
@@ -335,12 +351,14 @@ class CKMeans:
         self.iterations = 0
 
         # list of sample indices inside each cluster
-        self.clusters = [[] for _ in range(self.k)]
-        self.clusters_old = [[] for _ in range(self.k)]
+        self.clusters = np.zeros(len(series_list))
+        self.clusters_old = np.zeros(len(series_list))
 
         # mean feature tensor for each cluster
         self.centroids = []
         self.centroids_old = []
+        self.__old_score = np.inf
+        self.score = np.inf
 
     def fit(self, centroids=None):
         """
@@ -372,10 +390,14 @@ class CKMeans:
             self.clusters_old = clusters_old = self.clusters.copy()
 
             # update clusters
-            self.clusters = self._create_clusters()
+            self.clusters = np.apply_along_axis(
+                np.argmin,
+                axis=1,
+                arr=self.distance_measure(self.series_list, self.centroids),
+            )
 
             # update centroids
-            self.centroids = self._get_centroids(self.clusters)
+            self.centroids = self._get_centroids()
 
             # check for convergence
             if all(self._is_converged(centroids_old, clusters_old)):
@@ -385,7 +407,7 @@ class CKMeans:
             self.criteria = f"Reached iteration limit at iteration={self.iterations}"
             warn("Algorithm stopped due to exceeding max iterations.")
 
-        return self._get_cluster_labels(self.clusters)
+        return self.clusters
 
     def _get_cluster_labels(self, clusters):
         # Puts together on an array the assigned cluster for each tensor
@@ -394,15 +416,6 @@ class CKMeans:
             for sample_idx in cluster:
                 labels[sample_idx] = cluster_idx
         return labels
-
-    def _create_clusters(self):
-        # Init temporal empty cluster
-        clusters = [[] for _ in range(self.k)]
-        # Checks for each timeseries the closest centroid and returns this as clusters list
-        for idx, sample in enumerate(self.series_list):
-            centroids_idx = self.predict(sample)
-            clusters[centroids_idx].append(idx)
-        return clusters
 
     def predict(self, observation: np.ndarray):
         """Given an observation of the same dimension as the timeseries defined in this class,
@@ -423,12 +436,14 @@ class CKMeans:
         """
         # Computes the distance from the current sample to all existent centroids
         # Checks the closest centroid and returns its index
-        closest_idx = np.argmin(
-            [self.distance_measure(observation, point) for point in self.centroids]
-        )
+        closest_idx = np.argmin(self.distance_measure(observation, self.centroids))
         return int(closest_idx)
 
-    def _get_centroids(self, clusters_list: list[list] | list[np.ndarray]):
+    def _get_centroids(self):
+        clusters_list = (
+            np.where(self.clusters == a, 1, 0).nonzero()[0]
+            for a in range(len(self.centroids))
+        )
         series_in_cluster = (
             itemgetter(*cluster)(self.series_list) for cluster in clusters_list
         )
@@ -441,8 +456,17 @@ class CKMeans:
         ]
         return centroids
 
+    def compute_score(self):
+        return sum(
+            euclidean_distance_lc(np.nan_to_num(a), np.nan_to_num(b))
+            for a, b in zip(self.centroids, self.centroids_old)
+        )
+
     def _is_converged(self, centroids_old, clusters_old):
         # Verify if there's no more improvement for the current iteration and returns True as converging criteria
+        self.__old_score = self.score
+        self.score = self.compute_score()
+        yield self.__old_score <= self.score
         yield all(a.shape == b.shape for a, b in zip(centroids_old, self.centroids))
-        yield clusters_old == self.clusters
+        yield np.allclose(clusters_old, self.clusters)
         yield all(np.allclose(a, b) for a, b in zip(centroids_old, self.centroids))

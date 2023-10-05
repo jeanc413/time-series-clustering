@@ -99,7 +99,9 @@ scores_dtw_g0.print_scores()
 
 # %% soft-dtw, gamma = 1
 t_i = time()
-alg_sdtw_g1 = clustering.KMeans(series_list=train_data, k=k)
+alg_sdtw_g1 = clustering.KMeans(
+    series_list=train_data, k=k, state=np.random.default_rng(1234)
+)
 alg_sdtw_g1.fit()
 t_f = time()
 runtimes["alg_sdtw_g1"] = t_f - t_i
@@ -127,6 +129,12 @@ scores_sdtw_g2 = ClusterScores(
     np.fromiter((alg_sdtw_g2.predict(t) for t in test_data), np.int8, count=50),
 )
 scores_sdtw_g2.print_scores()
+
+# %% DBScan soft-dtw gamma 1
+alg_scan_g1 = clustering.DBScan(test_data, epsilon=30_000, min_pts=5)
+alg_scan_g1.assign_nodes()
+scores_scan_g1 = ClusterScores(test_labels, list(alg_scan_g1.labels.values()))
+scores_scan_g1.print_scores()
 
 # %% summarize results
 results = pd.DataFrame(
