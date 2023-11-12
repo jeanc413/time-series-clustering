@@ -271,7 +271,7 @@ class DBScan:
             "current": self.__epsilon,
         }
 
-    def assign_nodes(self):
+    def fit(self):
         current_label = -1
         for key, val in self.labels.items():
             if val is not None:
@@ -303,7 +303,7 @@ class CKMeans:
         self,
         series_list: list[np.ndarray] | np.ndarray[np.ndarray],
         k: int = 6,
-        distance_measure: Literal["soft_dtw", "euclidean", "dtw"] = "soft_dtw",
+        distance_measure: Literal["soft_dtw", "euclidean", "dtw"] = "dtw",
         state: Generator = None,
         max_iterations: int = 10,
         gamma: float = None,
@@ -314,8 +314,8 @@ class CKMeans:
         ----------
             series_list: list[np.ndarray] | np.ndarray[np.ndarray]
                 List of SubTensors objects to be clustered.
-            distance_measure: Callable[[np.ndarray, np.ndarray], float]
-                Computes the distance/similarity measure between 2 timeseries.
+            distance_measure: distance_measure: Literal["soft_dtw", "euclidean", "dtw"] = "dtw"
+                Name of the distance measure to be used for clustering.
             k: int
                 Number of clusters to build.
             max_iterations: int
@@ -436,8 +436,18 @@ class CKMeans:
         """
         # Computes the distance from the current sample to all existent centroids
         # Checks the closest centroid and returns its index
-        closest_idx = np.argmin(self.distance_measure(observation, self.centroids))
-        return int(closest_idx)
+        if isinstance(observation, np.ndarray):
+            closest_idx = np.argmin(
+                self.distance_measure([observation], self.centroids)
+            )
+            closest_idx = int(closest_idx)
+        else:
+            closest_idx = np.apply_along_axis(
+                np.argmin,
+                axis=1,
+                arr=self.distance_measure(observation, self.centroids),
+            )
+        return closest_idx
 
     def _get_centroids(self):
         clusters_list = (
