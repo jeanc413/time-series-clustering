@@ -211,7 +211,7 @@ class ClusterScores:
         Dictionary with pairs of Score names and the implemented function for computation.
         This is a class level attribute.
     true_labels: list | np.ndarray
-        Labels for ground truth describing clusters.
+        Labels for ground truth describing clusters_definitions.
     predicted_labels : list | np.ndarray
         Predicted labels.
     name : str, Optional
