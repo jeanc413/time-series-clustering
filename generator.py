@@ -7,70 +7,172 @@ Timeseries datasets are defined in R(n_ts, sz, d), where:
 that represents each observation is considered constant.
 * d representing the number of dimension/variables that the timeseries describes.
 
+When using the Euler-Maruyama method to generate time series data, the choice of drift and diffusion functions depends
+on the underlying stochastic differential equation (SDE) that you want to model. The SDE typically takes the form:
+
+$dX(t) = mu(X(t),t)dt + \sigma(X(t),t)dW(t)$
+
+Here's an explanation of the types of functions you can use as drift ($\mu$) and diffusion ($\sigma$) in the context
+of time series generation:
+
+    Linear Drift and Constant Diffusion:
+        Drift ($\mu$): A linear function of the current value of the time series or a constant.
+        Diffusion ($\sigma$): A constant value.
+
+    Example:
+        Drift: $\mu(x, t) = \theta x + \beta$
+        Diffusion: $\sigma(x, t) = \sigma_0$
+
+    Geometric Brownian Motion (GBM):
+        Drift ($\mu$): A constant times the current value.
+        Diffusion ($\sigma$): A constant times the current value.
+
+    Example:
+        Drift: $\mu(x, t) = \theta x$
+        Diffusion: $\sigma(x, t) = \sigma_0 x$
+
+    Ornstein-Uhlenbeck Process:
+        Drift ($\mu$): A function that drives the process back towards a mean value (mean-reverting).
+        Diffusion ($\sigma$): A constant.
+
+    Example:
+        Drift: $\mu(x, t) = \theta(\mu_0 - x)$
+        Diffusion: $\sigma(x, t) = \sigma_0$
+
+    Custom Drift and Diffusion:
+        You can define custom functions for drift and diffusion based on your specific modeling requirements.
+        These functions could be based on domain knowledge or empirical data.
+
+    Stochastic Volatility Models:
+        For more complex financial time series modeling, you may use stochastic volatility models with time-varying
+        parameters for both drift and diffusion. Examples include the Heston model, GARCH models,
+        and other advanced volatility models.
+
+The choice of drift and diffusion functions will depend on the characteristics of the data you want to model.
+For financial time series, geometric Brownian motion is a common choice. For mean-reverting processes,
+the Ornstein-Uhlenbeck process may be suitable. You may also need to calibrate these parameters based on real data
+to match the behavior of the time series you are modeling.
+
+Keep in mind that the specific functions and parameters used for drift and diffusion will vary based on your
+application and the underlying SDE that you are trying to simulate.
 
 """
-import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
+from warnings import warn
+
+import numpy as np
+
+from utils import ClusterScores
 
 
 @dataclass
 class TimeSeries:
-    sz: int
-    d: int
-    method: str | list[str]
+    """Representation of a time series.
 
+    Parameters
+    ----------
+    sz : int | Callable[, int]
+        Length of the time series. A callable that takes no arguments and returns an integer can be used.
+        This callable can be easy to define using partial from the functools module.
+        E.g. partial(np.random.default_rng().integers, low=0, high=5)()
+    drift : Callable
+        A function that defines the drift of the SDE.
+    diffusion : Callable
+        A function that defines the diffusion of the SDE.
+    initial_value : float | np.ndarray | Callable
+        The initial value of the time series. A callable that takes no arguments and returns an integer can be used.
+    time_step : float
+        The time step for the Euler-Maruyama method.
 
-def read_ui_har():
-    directory = "./UCI HAR Dataset"
-    test_data = []
-    with open(f"{directory}/test/X_test.txt") as file:
-        for f in file:
-            test_data.append(np.fromiter(map(float, f.split()), np.float64))
-    with open(f"{directory}/features.txt") as file:
-        features = file.readlines()
-    return test_data
+    """
 
+    sz: int | Callable
+    drift: Callable
+    diffusion: Callable
+    initial_value: float | np.ndarray | Callable
+    time_step: float
 
-class TimeSeriesGenerator:
-    def __init__(
-        self, drift: Callable, diffusion: Callable, initial_value, time_step, num_steps
-    ):
+    def __post_init__(self):
+        if isinstance(self.initial_value, np.ndarray) and self.initial_value.size == 1:
+            warn(
+                f"{self.initial_value.size=}, intended usage is a float. Attempting float casting."
+            )
+            self.initial_value = self.initial_value[0]
+        if isinstance(self.initial_value, np.ndarray) and self.initial_value.ndim > 1:
+            raise AttributeError(
+                f"{self.initial_value.ndim=}, but must be unidimensional or a float."
+            )
+        if isinstance(self.initial_value, Callable) and not isinstance(
+            self.initial_value(), (float, np.ndarray)
+        ):
+            raise AttributeError(
+                f"Values generated from initial_value must be float or np.ndarray, "
+                f"but it's returning {type(self.initial_value())=}"
+            )
+
+    def generate(self, multiprocess: bool = False, seed: np.random.Generator = None):
+        """Generate a time series using the Euler-Maruyama method.
+
+        Usage is based on a definition of drift and diffusion operators applied to SDEs typically of the form:
+        $dX(t) = mu(X(t),t)dt + \sigma(X(t),t)dW(t)$
+
+        Parameters
+        ----------
+        multiprocess : bool
+            When generating a multivariate timeseries, lets you decide if the generation of the current step must be
+            from the same or different process. The mean and variance of the process remain the same, but the
+            generation will be independent for each timeseries dimension.
+            Default is False.
+        seed : np.random.Generator | None
+            Numpy generator used to simulate the process. If None, a random generator will be used.
+            Default is None
+
+        Returns
+        -------
+        ndarray
+            An array containing the generated time series.
+
         """
-        Initialize the TimeSeriesGenerator.
+        if (
+            multiprocess
+            and isinstance(self.initial_value, float)
+            or (
+                isinstance(self.initial_value, Callable)
+                and not isinstance(self.initial_value(), float)
+            )
+        ):
+            raise AttributeError(
+                "Multiprocess only works for multivariate time series.\n" ""
+            )
 
-        Parameters:
-            drift : Callable
-                A function that defines the drift of the SDE.
-            diffusion : Callable
-                A function that defines the diffusion of the SDE.
-            initial_value : float
-                The initial value of the time series.
-            time_step : float
-                The time step for the Euler-Maruyama method.
-            num_steps : int
-                The number of steps to generate in the time series.
-        """
-        self.drift = drift
-        self.diffusion = diffusion
-        self.initial_value = initial_value
-        self.time_step = time_step
-        self.num_steps = num_steps
+        if not seed:
+            seed = np.random.default_rng()
 
-    def generate(self):
-        """
-        Generate a time series using the Euler-Maruyama method.
+        size = self.sz if isinstance(self.sz, int) else self.sz()
+        init_val = (
+            self.initial_value()
+            if isinstance(self.initial_value, Callable)
+            else self.initial_value
+        )
 
-        Returns:
-            ndarray: An array containing the generated time series.
-        """
-        time_series = np.zeros(self.num_steps)
-        time_series[0] = self.initial_value
-
-        for i in range(1, self.num_steps):
+        time_series = (
+            np.zeros(size)
+            if isinstance(init_val, float)
+            else np.zeros((size, init_val.size))
+        )
+        time_series[0] = init_val
+        process_deviation = (
+            self.time_step**0.5
+        )  # time step is the variance of the process.
+        for i in range(1, size):
             drift_value = self.drift(time_series[i - 1])
             diffusion_value = self.diffusion(time_series[i - 1])
-            delta_w = np.random.normal(0, np.sqrt(self.time_step))
+            delta_w = seed.normal(
+                0,
+                process_deviation,
+                None if not multiprocess else init_val.size,
+            )
             time_series[i] = (
                 time_series[i - 1]
                 + drift_value * self.time_step
@@ -80,8 +182,255 @@ class TimeSeriesGenerator:
         return time_series
 
 
+@dataclass
+class TimeSeriesSet:
+    """Class to generate a set of timeseries prepared to be used for a clustering experiment.
+
+    Parameters
+    ----------
+    train_n_ts : int | list[int]
+        Describe how many observations are to be generated as part of the training set from each given cluster.
+        If passing an integer, it will be converted to a list of the same integer with length equal to that of clusters.
+    clusters_definitions : list[TimeSeries]
+        Representation of clusters to be generated.
+    seed : np.random.Generator, optional
+        Random number generator. If none is provided, a random seed will be selected.
+    test_n_ts : int | list[int], optional
+        Describe how many observations are to be generated as part of the test set from each given cluster.
+        If passing an integer, it will be converted to a list of the same integer with length equal to that of clusters.
+        If none is passed, it will be assigned the same as train_n_ts
+    train_set : list[np.ndarray], optional
+        Generated observations for the training set.
+    test_set : list[np.ndarray], optional
+        Generated observations for the testing set.
+    centroids : list[np.ndarray], optional
+        Centroids list generated in the same order as clusters.
+    train_labels : list[int], optional
+        List of labels from the training set.
+    test_labels : list[int], optional
+        List of labels from the testing set.
+    multiprocess : bool, default=True
+        When generating a multivariate timeseries, lets you decide if the generation of the current step must be
+            from the same or different process. The mean and variance of the process remain the same, but the
+            generation will be independent for each timeseries dimension.
+            Default is False.
+
+    """
+
+    train_n_ts: int | list[int]
+    clusters_definitions: list[TimeSeries]
+    seed: np.random.Generator = None
+    test_n_ts: int | list[int] = None
+    train_set: list[np.ndarray] = field(default_factory=list)
+    test_set: list[np.ndarray] = field(default_factory=list)
+    centroids: list[np.ndarray] = field(default_factory=list)
+    train_labels: list[int] = field(default_factory=list)
+    test_labels: list[int] = field(default_factory=list)
+    multiprocess: bool = False
+
+    def __post__init(self):
+        if not self.seed:
+            self.seed = np.random.default_rng()
+        if not self.test_n_ts:
+            self.test_n_ts = self.train_n_ts
+        if not isinstance(self.train_n_ts, list):
+            self.train_n_ts = [
+                self.train_n_ts for _ in range(len(self.clusters_definitions))
+            ]
+        if not isinstance(self.test_n_ts, list):
+            self.test_n_ts = [
+                self.test_n_ts for _ in range(len(self.clusters_definitions))
+            ]
+
+        if len(self.test_n_ts) != len(self.train_n_ts) or len(self.test_n_ts) != len(
+            self.clusters_definitions
+        ):
+            raise AttributeError(
+                "Length of test and train set must be of the same length as "
+                "the cluster definition test, but "
+                f"{len(self.test_n_ts)=}, {len(self.train_n_ts)=}, {len(self.clusters_definitions)=}"
+            )
+
+    def generate_set(self):
+        """Generates the set of time series modeled on this class.
+
+        Returns
+        -------
+        TimeSeriesSet
+            Returns this same class, but containing testing and training data set and labels as well as predefined
+            centroid from each class.
+
+        """
+        label = max(self.test_labels) if self.test_labels else 0
+        for timeseries, test_length, train_length in zip(
+            self.clusters_definitions, self.test_n_ts, self.train_n_ts
+        ):
+            self.test_set.extend(
+                [
+                    timeseries.generate(multiprocess=self.multiprocess, seed=self.seed)
+                    for _ in range(test_length)
+                ]
+            )
+            self.train_set.extend(
+                [
+                    timeseries.generate(multiprocess=self.multiprocess, seed=self.seed)
+                    for _ in range(train_length)
+                ]
+            )
+            self.centroids.append(
+                timeseries.generate(multiprocess=self.multiprocess, seed=self.seed)
+            )
+            self.train_labels.extend([label for _ in range(train_length)])
+            self.test_labels.extend([label for _ in range(test_length)])
+
+            label += 1
+        return self
+
+
+implemented_predict_flags = ["km", "kmeans"]
+implemented_models = ["km", "kmeans", "sc", "scan", "dbscan"]
+
+
+@dataclass
+class Experiment:
+    """Runs a determined experiment consisting of a list of TimeSeriesSets and clustering models returning
+    a list of results from each of those runs.
+
+    Parameters
+    ----------
+    series_sets: dict[str, TimeSeriesSet]
+        Named time series sets that have been generated or not.
+    partial_models: dict[str, Callable]
+        List of models to experiment with. Note that this must be partial models that can be instantiated by passing
+        only a list of time series
+    results: list[dict] Optional
+        This is the list storing results for the ran experiment.
+
+    """
+
+    series_sets: dict[str, TimeSeriesSet]
+    partial_models: dict[str, Callable]
+    results: list[dict] = field(default_factory=list)
+    failed: list[dict] = field(default_factory=list)
+
+    def __post_init__(self):
+        for name in self.partial_models:
+            if not self.check_implemented(name):
+                raise AttributeError(
+                    f"Model {name=} didn't share any flag with available implemented models "
+                    f"{implemented_models=}"
+                )
+
+    @staticmethod
+    def check_implemented_predict(model_name: str):
+        """Checks if a provided model contains predict
+
+        Parameters
+        ----------
+        model_name
+
+        Returns
+        -------
+
+        """
+        implemented = True
+        for flag in implemented_predict_flags:
+            if flag in model_name:
+                break
+        else:
+            implemented = False
+        return implemented
+
+    @staticmethod
+    def check_implemented(model_name: str):
+        implemented = True
+        for flag in implemented_models:
+            if flag in model_name:
+                break
+        else:
+            implemented = False
+        return implemented
+
+    def run_models(self, series_name: str, series_set: TimeSeriesSet):
+        """Takes a TimeSeriesSets and runs a user defined list of models.
+
+        Parameters
+        ----------
+        series_name : str
+            Name of the series set.
+        series_set : TimeSeriesSet
+            Times series set object.
+
+        Returns
+        -------
+        results : list[dict]
+            Results from applying the defined models in this class.
+            For implemented metrics see ClusterScores.
+
+        """
+        results = []
+        for alg_name, alg_model in self.partial_models.items():
+            if any(
+                alg_name == r["alg_model"] and series_name == r["series_name"]
+                for r in self.results
+            ):
+                continue
+            try:
+                implemented_predict = self.check_implemented_predict(alg_name)
+                k = len(series_set.clusters_definitions)
+                alg = (
+                    alg_model(series_list=series_set.train_set, k=k)
+                    if implemented_predict
+                    else alg_model(series_list=series_set.train_set)
+                )
+                true_labels = series_set.train_labels
+
+                predict_labels = (
+                    alg.fit(series_set.centroids)
+                    if "centroids" in dir(alg)
+                    else alg.fit()
+                )
+                if implemented_predict:
+                    true_labels = series_set.test_labels
+                    predict_labels = alg.predict(series_set.test_set)
+                results.append(
+                    {
+                        "series_name": series_name,
+                        "alg_model": alg_model,
+                        **ClusterScores(true_labels, predict_labels).get_scores(),
+                    }
+                )
+            except Exception as e:
+                self.failed.append(
+                    {
+                        "series_name": series_name,
+                        "alg_model": alg_model,
+                        "exception": e,
+                    }
+                )
+
+        return results
+
+    def run_experiment(self):
+        """Takes all TimeSeriesSets stored in this class and runs them through the user models defined in this class.
+
+        Returns
+        -------
+        results : list[dict]
+            Results of cross running all models and series sets in this class.
+
+        """
+        for series_name, series_set in self.series_sets.items():
+            if not series_set.train_set:
+                series_set: TimeSeriesSet = series_set.generate_set()
+            self.results.extend(self.run_models(series_name, series_set))
+        return self.results
+
+
 # Example usage:
 if __name__ == "__main__":
+    from matplotlib import pyplot as plt
+
     # Define drift and diffusion functions (example: geometric Brownian motion)
     def drift_func(x):
         return 0.1 * x
@@ -89,17 +438,34 @@ if __name__ == "__main__":
     def diffusion_func(x):
         return 0.2 * x
 
-    # Initialize the TimeSeriesGenerator
-    generator = TimeSeriesGenerator(
+    seed_number = 123
+
+    generator = TimeSeries(
+        sz=100,
         drift=drift_func,
         diffusion=diffusion_func,
-        initial_value=100.0,
+        initial_value=np.array([100.0, 3.2, 43]),
         time_step=0.01,
-        num_steps=100,
     )
+    series_1 = TimeSeries(
+        sz=100,
+        drift=drift_func,
+        diffusion=diffusion_func,
+        initial_value=np.array([100.0, 3.2, 43]),
+        time_step=0.01,
+    ).generate(seed=np.random.default_rng(seed_number))
 
-    # Generate a time series
-    series_1 = generator.generate()
+    series_2 = TimeSeries(
+        sz=100,
+        drift=drift_func,
+        diffusion=diffusion_func,
+        initial_value=np.array([100.0, 3.2, 43]),
+        time_step=0.01,
+    ).generate(multiprocess=True, seed=np.random.default_rng(seed_number))
 
-    # Print the first few values of the generated time series
-    print(series_1[:10])
+    fig, ax = plt.subplots(ncols=2)
+    ax[0].plot(series_1)
+    ax[0].set_title("Series 1\none process")
+    ax[1].plot(series_2)
+    ax[1].set_title("Series 2\nmultiprocess")
+    plt.show()
