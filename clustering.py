@@ -40,7 +40,7 @@ class KMeans:
             distance_measure: Callable[[np.ndarray, np.ndarray], float]
                 Computes the distance/similarity measure between 2 timeseries.
             k: int
-                Number of clusters to build.
+                Number of clusters_definitions to build.
             max_iterations: int
                 Admissible iterations to compute.
 
@@ -96,7 +96,7 @@ class KMeans:
             self.centroids_old = centroids_old = self.centroids.copy()
             self.clusters_old = clusters_old = self.clusters.copy()
 
-            # update clusters
+            # update clusters_definitions
             self.clusters = self._create_clusters()
 
             # update centroids
@@ -123,7 +123,7 @@ class KMeans:
     def _create_clusters(self):
         # Init temporal empty cluster
         clusters = [[] for _ in range(self.k)]
-        # Checks for each timeseries the closest centroid and returns this as clusters list
+        # Checks for each timeseries the closest centroid and returns this as clusters_definitions list
         for idx, sample in enumerate(self.series_list):
             centroids_idx = self.predict(sample)
             clusters[centroids_idx].append(idx)
@@ -175,19 +175,27 @@ class KMeans:
 
 class DBScan:
     implemented = {
-        "c_euclidean": c_euclidean,
-        "cdist_soft_dtw": cdist_soft_dtw,
-        "cdist_soft_dtw_normalized": cdist_soft_dtw_normalized,
-        "cdist_gak": cdist_gak,
-        "cdist_dtw": cdist_dtw,
-        "cdist_ctw": cdist_ctw,
-        "cdist_sax": cdist_sax,
+        "euclidean": c_euclidean,
+        "soft_dtw": cdist_soft_dtw,
+        "soft_dtw_normalized": cdist_soft_dtw_normalized,
+        "gak": cdist_gak,
+        "dtw": cdist_dtw,
+        "ctw": cdist_ctw,
+        "sax": cdist_sax,
     }
 
     def __init__(
         self,
         series_list: list[np.ndarray] | np.ndarray[np.ndarray],
-        distance_base: str = "cdist_soft_dtw",
+        distance_base: Literal[
+            "euclidean",
+            "soft_dtw",
+            "soft_dtw_normalized",
+            "gak",
+            "dtw",
+            "ctw",
+            "sax",
+        ] = "dtw",
         epsilon: float | str = 0.5,
         min_pts: int = 5,
         distance_base_kwargs: dict = None,
@@ -317,7 +325,7 @@ class CKMeans:
             distance_measure: distance_measure: Literal["soft_dtw", "euclidean", "dtw"] = "dtw"
                 Name of the distance measure to be used for clustering.
             k: int
-                Number of clusters to build.
+                Number of clusters_definitions to build.
             max_iterations: int
                 Admissible iterations to compute.
 
@@ -389,7 +397,7 @@ class CKMeans:
             self.centroids_old = centroids_old = self.centroids.copy()
             self.clusters_old = clusters_old = self.clusters.copy()
 
-            # update clusters
+            # update clusters_definitions
             self.clusters = np.apply_along_axis(
                 np.argmin,
                 axis=1,
