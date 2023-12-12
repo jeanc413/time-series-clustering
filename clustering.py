@@ -390,6 +390,8 @@ class CKMeans:
                 len(self.series_list), self.k, replace=False
             )
             self.centroids = [self.series_list[i] for i in self.centroids]
+        else:
+            self.centroids = centroids
 
         # Optimization
         for _ in range(self.max_iterations):
