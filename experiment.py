@@ -1,6 +1,7 @@
 from functools import partial
 
 import numpy as np
+import pandas as pd
 
 import generator
 import clustering
@@ -32,7 +33,7 @@ experiment_seed = np.random.default_rng(seed)
 
 experiment = generator.Experiment(
     series_sets={
-        "lineal drift and constant diffusion": generator.TimeSeriesSet(
+        "linear drift and constant diffusion": generator.TimeSeriesSet(
             train_n_ts=20,
             clusters_definitions=[
                 generator.TimeSeries(
@@ -45,9 +46,35 @@ experiment = generator.Experiment(
                     diffusion=partial(
                         constant_diffusion, constant=np.array([-7.5, -10, -12.5])
                     ),
+                    initial_value=np.array([100, 100, 100]),
+                    time_step=0.1,
+                ),
+                generator.TimeSeries(
+                    sz=len_gen,
+                    drift=partial(
+                        linear_drift,
+                        mu=np.array([0.5, 0.3, 0.01]),
+                        beta=np.array([-12, -18, -20]),
+                    ),
+                    diffusion=partial(
+                        constant_diffusion, constant=np.array([-7.5, -10, -12.5])
+                    ),
                     initial_value=np.array([0.5, 13.5, -0.3]),
                     time_step=0.1,
-                )
+                ),
+                generator.TimeSeries(
+                    sz=len_gen,
+                    drift=partial(
+                        linear_drift,
+                        mu=np.array([-0, -2, -2.5]),
+                        beta=np.array([-17, -25, -30]),
+                    ),
+                    diffusion=partial(
+                        constant_diffusion, constant=np.array([-7.5, -10, -12.5])
+                    ),
+                    initial_value=np.array([-200, -200, -200]),
+                    time_step=0.1,
+                ),
             ],
             seed=experiment_seed,
             test_n_ts=10,
@@ -56,89 +83,86 @@ experiment = generator.Experiment(
     partial_models={
         "km-euclidean": partial(
             clustering.CKMeans,
-            distanca_measure="euclidean",
+            distance_measure="euclidean",
             state=np.random.default_rng(seed),
             max_iterations=25,
         ),
         "km-dtw": partial(
             clustering.CKMeans,
-            distanca_measure="dtw",
+            distance_measure="dtw",
             state=np.random.default_rng(seed),
             max_iterations=25,
         ),
         "km-soft_dtw-g=0.5": partial(
             clustering.CKMeans,
-            distanca_measure="soft_dtw",
+            distance_measure="soft_dtw",
             state=np.random.default_rng(seed),
             max_iterations=25,
             gamma=0.5,
         ),
         "km-soft_dtw-g=1": partial(
             clustering.CKMeans,
-            distanca_measure="soft_dtw",
+            distance_measure="soft_dtw",
             state=np.random.default_rng(seed),
             max_iterations=25,
             gamma=1.0,
         ),
         "km-soft_dtw-g=2": partial(
             clustering.CKMeans,
-            distanca_measure="soft_dtw",
+            distance_measure="soft_dtw",
             state=np.random.default_rng(seed),
             max_iterations=25,
-            gamma=2,
+            gamma=2.0,
         ),
         "km-soft_dtw-g=3": partial(
             clustering.CKMeans,
-            distanca_measure="soft_dtw",
+            distance_measure="soft_dtw",
             state=np.random.default_rng(seed),
             max_iterations=25,
-            gamma=3,
+            gamma=3.0,
         ),
         "sc-euclidean": partial(
             clustering.DBScan,
             distance_base="euclidean",
-            state=np.random.default_rng(seed),
-            epsilon=300,
+            epsilon=1000000,
             min_pts=5,
         ),
         "sc-dtw": partial(
             clustering.DBScan,
             distance_base="dtw",
-            state=np.random.default_rng(seed),
-            epsilon=300,
+            epsilon=1000000,
             min_pts=5,
         ),
         "sc-soft_dtw-g=0.5": partial(
             clustering.DBScan,
             distance_base="soft_dtw",
-            state=np.random.default_rng(seed),
-            epsilon=300,
+            epsilon=1000000,
             min_pts=5,
-            distance_base_kwargs={"g": 0.5},
+            distance_base_kwargs={"gamma": 0.5},
         ),
         "sc-soft_dtw-g=1": partial(
             clustering.DBScan,
             distance_base="soft_dtw",
-            state=np.random.default_rng(seed),
-            epsilon=300,
+            epsilon=1000000,
             min_pts=5,
-            distance_base_kwargs={"g": 1},
+            distance_base_kwargs={"gamma": 1},
         ),
         "sc-soft_dtw-g=2": partial(
             clustering.DBScan,
             distance_base="soft_dtw",
-            state=np.random.default_rng(seed),
-            epsilon=300,
+            epsilon=1000000,
             min_pts=5,
-            distance_base_kwargs={"g": 2},
+            distance_base_kwargs={"gamma": 2},
         ),
         "sc-soft_dtw-g=3": partial(
             clustering.DBScan,
             distance_base="soft_dtw",
-            state=np.random.default_rng(seed),
-            epsilon=300,
+            epsilon=1000000,
             min_pts=5,
-            distance_base_kwargs={"g": 3},
+            distance_base_kwargs={"gamma": 3},
         ),
     },
 )
+
+
+results = pd.DataFrame.from_records(experiment.run_experiment())
