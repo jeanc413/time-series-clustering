@@ -66,6 +66,10 @@ import numpy as np
 from utils import ClusterScores
 
 
+IMPLEMENTED_PREDICT_FLAGS = ["km", "kmeans"]
+IMPLEMENTED_MODELS = ["km", "kmeans", "sc", "scan", "dbscan"]
+
+
 @dataclass
 class TimeSeries:
     """Representation of a time series.
@@ -228,7 +232,7 @@ class TimeSeriesSet:
     test_labels: list[int] = field(default_factory=list)
     multiprocess: bool = False
 
-    def __post__init(self):
+    def __post_init__(self):
         if not self.seed:
             self.seed = np.random.default_rng()
         if not self.test_n_ts:
@@ -287,10 +291,6 @@ class TimeSeriesSet:
         return self
 
 
-implemented_predict_flags = ["km", "kmeans"]
-implemented_models = ["km", "kmeans", "sc", "scan", "dbscan"]
-
-
 @dataclass
 class Experiment:
     """Runs a determined experiment consisting of a list of TimeSeriesSets and clustering models returning
@@ -318,7 +318,7 @@ class Experiment:
             if not self.check_implemented(name):
                 raise AttributeError(
                     f"Model {name=} didn't share any flag with available implemented models "
-                    f"{implemented_models=}"
+                    f"{IMPLEMENTED_MODELS=}"
                 )
 
     @staticmethod
@@ -327,14 +327,15 @@ class Experiment:
 
         Parameters
         ----------
-        model_name
+        model_name : str
 
         Returns
         -------
+        implemented : bool
 
         """
         implemented = True
-        for flag in implemented_predict_flags:
+        for flag in IMPLEMENTED_PREDICT_FLAGS:
             if flag in model_name:
                 break
         else:
@@ -344,7 +345,7 @@ class Experiment:
     @staticmethod
     def check_implemented(model_name: str):
         implemented = True
-        for flag in implemented_models:
+        for flag in IMPLEMENTED_MODELS:
             if flag in model_name:
                 break
         else:
@@ -377,9 +378,11 @@ class Experiment:
                 continue
             try:
                 implemented_predict = self.check_implemented_predict(alg_name)
-                k = len(series_set.clusters_definitions)
                 alg = (
-                    alg_model(series_list=series_set.train_set, k=k)
+                    alg_model(
+                        series_list=series_set.train_set,
+                        k=len(series_set.clusters_definitions),
+                    )
                     if implemented_predict
                     else alg_model(series_list=series_set.train_set)
                 )
@@ -390,6 +393,10 @@ class Experiment:
                     if "centroids" in dir(alg)
                     else alg.fit()
                 )
+
+                if isinstance(predict_labels, dict):
+                    predict_labels = list(predict_labels.values())
+
                 if implemented_predict:
                     true_labels = series_set.test_labels
                     predict_labels = alg.predict(series_set.test_set)
@@ -424,6 +431,11 @@ class Experiment:
             if not series_set.train_set:
                 series_set: TimeSeriesSet = series_set.generate_set()
             self.results.extend(self.run_models(series_name, series_set))
+        if self.failed:
+            warn(
+                f"While running current experiment, a total of {len(self.failed)} where raised.\n"
+                f"See failed argument for more details."
+            )
         return self.results
 
 
