@@ -62,9 +62,9 @@ from typing import Callable
 from warnings import warn
 
 import numpy as np
+from matplotlib import pyplot as plt
 
 from utils import ClusterScores
-
 
 IMPLEMENTED_PREDICT_FLAGS = ["km", "kmeans"]
 IMPLEMENTED_MODELS = ["km", "kmeans", "sc", "scan", "dbscan"]
@@ -95,7 +95,7 @@ class TimeSeries:
     drift: Callable
     diffusion: Callable
     initial_value: float | np.ndarray | Callable
-    time_step: float
+    time_step: float = 0.001
 
     def __post_init__(self):
         if isinstance(self.initial_value, np.ndarray) and self.initial_value.size == 1:
@@ -108,7 +108,7 @@ class TimeSeries:
                 f"{self.initial_value.ndim=}, but must be unidimensional or a float."
             )
         if isinstance(self.initial_value, Callable) and not isinstance(
-            self.initial_value(), (float, np.ndarray)
+                self.initial_value(), (float, np.ndarray)
         ):
             raise AttributeError(
                 f"Values generated from initial_value must be float or np.ndarray, "
@@ -138,13 +138,9 @@ class TimeSeries:
             An array containing the generated time series.
 
         """
-        if (
-            multiprocess
-            and isinstance(self.initial_value, float)
-            or (
-                isinstance(self.initial_value, Callable)
-                and not isinstance(self.initial_value(), float)
-            )
+        if (multiprocess and isinstance(self.initial_value, float) or (
+                isinstance(self.initial_value, Callable) and not isinstance(self.initial_value(), float)
+        )
         ):
             raise AttributeError(
                 "Multiprocess only works for multivariate time series.\n" ""
@@ -167,7 +163,7 @@ class TimeSeries:
         )
         time_series[0] = init_val
         process_deviation = (
-            self.time_step**0.5
+                self.time_step ** 0.5
         )  # time step is the variance of the process.
         for i in range(1, size):
             drift_value = self.drift(time_series[i - 1])
@@ -178,9 +174,9 @@ class TimeSeries:
                 None if not multiprocess else init_val.size,
             )
             time_series[i] = (
-                time_series[i - 1]
-                + drift_value * self.time_step
-                + diffusion_value * delta_w
+                    time_series[i - 1]
+                    + drift_value * self.time_step
+                    + diffusion_value * delta_w
             )
 
         return time_series
@@ -198,7 +194,7 @@ class TimeSeriesSet:
     clusters_definitions : list[TimeSeries]
         Representation of clusters to be generated.
     seed : np.random.Generator, optional
-        Random number generator. If none is provided, a random seed will be selected.
+        Random number generator. If none is provided, a random SEED will be selected.
     test_n_ts : int | list[int], optional
         Describe how many observations are to be generated as part of the test set from each given cluster.
         If passing an integer, it will be converted to a list of the same integer with length equal to that of clusters.
@@ -231,6 +227,7 @@ class TimeSeriesSet:
     train_labels: list[int] = field(default_factory=list)
     test_labels: list[int] = field(default_factory=list)
     multiprocess: bool = False
+    identifier: str = None
 
     def __post_init__(self):
         if not self.seed:
@@ -247,7 +244,7 @@ class TimeSeriesSet:
             ]
 
         if len(self.test_n_ts) != len(self.train_n_ts) or len(self.test_n_ts) != len(
-            self.clusters_definitions
+                self.clusters_definitions
         ):
             raise AttributeError(
                 "Length of test and train set must be of the same length as "
@@ -267,7 +264,7 @@ class TimeSeriesSet:
         """
         label = max(self.test_labels) if self.test_labels else 0
         for timeseries, test_length, train_length in zip(
-            self.clusters_definitions, self.test_n_ts, self.train_n_ts
+                self.clusters_definitions, self.test_n_ts, self.train_n_ts
         ):
             self.test_set.extend(
                 [
@@ -289,6 +286,32 @@ class TimeSeriesSet:
 
             label += 1
         return self
+
+    def plot_set(self, title: str = None) -> None:
+        """Plots this class train and test set.
+
+        Parameters
+        ----------
+        title : str, optional
+            Title to be used for the whole plot. If identifier is assigned in this class it
+            will be overloaded. Defaults to None
+
+        """
+        if self.identifier is not None:
+            title = self.identifier
+
+        figure, axes = plt.subplots(2)
+        axes[0].plot(self.train_set)
+        axes[0].set_title("Train set")
+
+        axes[1].plot(self.test_set)
+        axes[1].set_title("Test set")
+
+        if title:
+            figure.suptitle(title)
+        figure.tight_layout()
+
+        plt.show()
 
 
 @dataclass
@@ -372,18 +395,17 @@ class Experiment:
         results = []
         for alg_name, alg_model in self.partial_models.items():
             if any(
-                alg_name == r["alg_model"] and series_name == r["series_name"]
-                for r in self.results
+                    alg_name == r["alg_model"] and series_name == r["series_name"]
+                    for r in self.results
             ):
                 continue
             try:
-                implemented_predict = self.check_implemented_predict(alg_name)
                 alg = (
                     alg_model(
                         series_list=series_set.train_set,
                         k=len(series_set.clusters_definitions),
                     )
-                    if implemented_predict
+                    if (implemented_predict := self.check_implemented_predict(alg_name))
                     else alg_model(series_list=series_set.train_set)
                 )
                 true_labels = series_set.train_labels
@@ -404,6 +426,7 @@ class Experiment:
                     {
                         "series_name": series_name,
                         "alg_model": alg_model,
+                        "iterations": alg.iterations if "iterations" in dir(alg) else None,
                         **ClusterScores(true_labels, predict_labels).get_scores(),
                     }
                 )
@@ -441,14 +464,14 @@ class Experiment:
 
 # Example usage:
 if __name__ == "__main__":
-    from matplotlib import pyplot as plt
-
     # Define drift and diffusion functions (example: geometric Brownian motion)
     def drift_func(x):
         return 0.1 * x
 
+
     def diffusion_func(x):
         return 0.2 * x
+
 
     seed_number = 123
 
