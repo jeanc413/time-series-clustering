@@ -1,7 +1,9 @@
-from typing import Any, Iterable
+from numbers import Number
+from typing import Any, Union
 
+import numba.typed as nbt
 import numpy as np
-from matplotlib import pyplot as plt
+from numba import njit, prange
 from sklearn.metrics import (
     rand_score,
     adjusted_rand_score,
@@ -11,97 +13,46 @@ from sklearn.metrics import (
     completeness_score,
     v_measure_score,
 )
-from numba import njit, prange
-import numba.typed as nbt
 
 
-class CaptureData(list):
-    """After being instantiated, everytime this class is called, it will
-    store a unique `observation` parameter in the self-list, and return the same value.
+def number_try_parse(obj: Any) -> Union[Number, False]:
+    """Given a certain object, tries to parse it to a float or an integer accordingly.
 
-    Examples
-    --------
-    >>> capture = CaptureData()
-    >>> capture(10)
-    10
-    >>> capture(11)
-    11
-    >>> capture
-    [10, 11]
+    If the parsing is not possible, returns False.
 
-    >>> capture = CaptureData()
-    >>> capture(1)
-    1
-    >>> capture(["a", "b"])
-    ['a', 'b']
-    >>> capture(30)
-    30
-    >>> capture
-    [1, ['a', 'b'], 30]
+    Parameters
+    ----------
+    obj : Any
+        Object to try parse to a number.
+
+    Returns
+    -------
+    Number | False
+        If the parsing is successful, returns the corresponding float or an integer.
+        Otherwise, returns False.
 
     """
-
-    def __int__(self):
-        super().__init__()
-
-    def __call__(self, observation: Any):
-        """Add any object to class list and return the same value
-
-        Parameters
-        ----------
-        observation : Any
-            Object to be added to the list.
-
-        Returns
-        -------
-        observation : Any
-            Same provided object
-
-        """
-        self.append(observation)
-        return observation
-
-
-class VisualizeSeries:
-    def __int__(self, n_rows: int = 1, n_cols: int = 1):
-        self.n_rows = n_rows
-        self.n_cols = n_cols
-        self.fig, self.ax = plt.subplots(n_rows, n_cols)
-        self.fig: plt.figure
-        self.ax: plt.Axes
-
-    def add_timeseries(self, timeseries: np.ndarray, row: int = None, col: int = None):
-        if (self.n_rows != 1 and row is None) or (self.n_cols != 1 and col is None):
-            raise AttributeError(
-                "When n_col or n_row are bigger than 0, row and col attributes must be specified."
-            )
-        if self.n_rows != 1:
-            if self.n_cols != 1:
-                self.ax[row, col].plot(timeseries)
-            else:
-                self.ax[row].plot(timeseries)
+    try:
+        if (val := float(obj)).is_integer():
+            return int(obj)
         else:
-            self.ax.plot(timeseries)
+            return val
 
-    def add_many_timeseries(self, timeseries: Iterable[np.ndarray]):
-        for t in timeseries:
-            self.ax.plot(t)
-
-    def show(self):
-        plt.tight_layout()
-        self.fig.show()
+    except ValueError:
+        pass
+    return False
 
 
-@njit(nogil=True)
+@njit(nogil=True, parallel=True)
 def __difference_lc(s1, s2):
     results = np.zeros(s2.shape)
     results[: len(s1)] = s1 - s2[: len(s1)]
-    results[len(s1) :] = s1[-1] - s2[len(s1) :]
+    results[len(s1):] = s1[-1] - s2[len(s1):]
     return results
 
 
-@njit(nogil=True)
-def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = None):
+@njit(nogil=True, parallel=True)
+def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray):
     """Takes 2 timeseries and calculates the Euclidean distance between them.
     In case that this timeseries have different lengths, it will:
     * Calculate the difference until min(len(s1), len(s2))
@@ -115,14 +66,14 @@ def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = No
         First timeseries.
     s2 : np.ndarray
         Second timeseries.
-    weights : np.ndarray
-        Weights to adjust distance computation. It must be same length as the longest timeseries.
 
     Returns
     -------
+    np.ndarray
+        Normed distance between given timeseries.
 
     """
-    if s1.shape[1] != s2.shape[1]:
+    if s1.ndim > 1 and s2.ndim > 1 and s1.shape[1] != s2.shape[1]:
         raise AttributeError(
             "S1 and S2 aren't in the same dimension. See Docstring for expected format definition."
         )
@@ -134,36 +85,37 @@ def euclidean_distance_lc(s1: np.ndarray, s2: np.ndarray, weights: Iterable = No
     else:
         results = __difference_lc(s1=s2, s2=s1)
 
-    if weights is not None:
-        if not isinstance(weights, np.ndarray):
-            weights = np.asarray(weights)
-        results = results * weights
-
     return np.linalg.norm(results)
 
 
 @njit(parallel=True)
 def __c_euclidean_lc(
-    series_list_1: nbt.List[np.ndarray],
-    series_list_2: nbt.List[np.ndarray] = None,
-    self_similarity=False,
+        series_list_1: nbt.List[np.ndarray],
+        series_list_2: nbt.List[np.ndarray],
 ):
-    dists = np.zeros((len(series_list_1), len(series_list_2)))
-
+    dists = np.zeros((len(series_list_1), len(series_list_2)), dtype=np.float64)
     for i in prange(len(series_list_1)):
-        s1 = series_list_1[i]
         for j in prange(len(series_list_2)):
-            if self_similarity and j < i and dists[i, j] != 0:
-                dists[i, j] = dists[j, i]
-            else:
-                dists[i, j] = euclidean_distance_lc(s1, series_list_2[j])
-
+            # warning on uint to int is not an issue, Numba gets confused with the integers i, j in parallel mode.
+            dists[i, j] = euclidean_distance_lc(s1=series_list_1[i], s2=series_list_2[j])
     return dists
 
 
+@njit(parallel=True)
+def __self_euclidean_lc(series_list: nbt.List[np.ndarray]):
+    dists = np.zeros((len(series_list), len(series_list)), dtype=np.float64)
+    for i in prange(len(series_list)):
+        for j in prange(len(series_list)):
+            if i == j:
+                break
+            # warning on uint to int is not an issue, Numba gets confused with the integers i, j in parallel mode.
+            dists[i, j] = euclidean_distance_lc(s1=series_list[i], s2=series_list[j])
+    return dists + dists.T
+
+
 def c_euclidean(
-    series_list_1: list[np.ndarray] | nbt.List[np.ndarray],
-    series_list_2: list[np.ndarray] | nbt.List[np.ndarray] = None,
+        series_list_1: list[np.ndarray] | nbt.List[np.ndarray],
+        series_list_2: list[np.ndarray] | nbt.List[np.ndarray] = None,
 ):
     """Computes matrix of Euclidean distances from 2 given timeseries lists.
     If the second matrix is not provided, it computes a self distance squared matrix.
@@ -187,19 +139,18 @@ def c_euclidean(
     """
     if isinstance(series_list_1, list):
         series_list_1 = nbt.List(np.nan_to_num(s) for s in series_list_1)
-    if series_list_2 is not None and isinstance(series_list_2, list):
+    if isinstance(series_list_2, list):
         series_list_2 = nbt.List(np.nan_to_num(s) for s in series_list_2)
 
-    self_similarity = False
     if series_list_2 is None:
-        series_list_2 = series_list_1
-        self_similarity = True
+        dist = __self_euclidean_lc(series_list=series_list_1)
+    else:
+        dist = __c_euclidean_lc(
+            series_list_1=series_list_1,
+            series_list_2=series_list_2,
+        )
 
-    return __c_euclidean_lc(
-        series_list_1=series_list_1,
-        series_list_2=series_list_2,
-        self_similarity=self_similarity,
-    )
+    return dist
 
 
 class ClusterScores:
@@ -239,10 +190,10 @@ class ClusterScores:
     }
 
     def __init__(
-        self,
-        true_labels: list | np.ndarray,
-        predicted_labels: list | np.ndarray,
-        name: str = None,
+            self,
+            true_labels: list | np.ndarray,
+            predicted_labels: list | np.ndarray,
+            name: str = None,
     ):
         self.true_labels = (
             true_labels
