@@ -1,23 +1,23 @@
 # Code for soft DTW is by Mathieu Blondel under Simplified BSD license
 import numpy as np
 from scipy.optimize import minimize
-
-from tslearn.utils import to_time_series_dataset, check_equal_size
-from tslearn.preprocessing import TimeSeriesResampler
 from tslearn.metrics import SquaredEuclidean, SoftDTW
+from tslearn.preprocessing import TimeSeriesResampler
+from tslearn.utils import to_time_series_dataset, check_equal_size
 
 
-def euclidean_barycenter(timeseries_data, weights=None):
+def euclidean_barycenter(timeseries_data, weights=None, init_barycenter=None):
     """Standard Euclidean barycenter computed from a set of time series.
 
     Parameters
     ----------
     timeseries_data : array-like
         Time series dataset.
-
     weights: None or array
         Weights of each X[i]. Must be the same size as len(X).
         If None, uniform weights are used.
+    init_barycenter : None
+        Ignored parameter for compatibility
 
     Returns
     -------
@@ -40,9 +40,11 @@ def euclidean_barycenter(timeseries_data, weights=None):
            [3.5],
            [4.5]])
     """
+    ndim = timeseries_data[0].ndim
     timeseries_data = np.nan_to_num(to_time_series_dataset(timeseries_data))
     weights = _set_weights(weights, timeseries_data.shape[0])
-    return np.average(timeseries_data, axis=0, weights=weights)
+    barycenter = np.average(timeseries_data, axis=0, weights=weights)
+    return barycenter if ndim > 1 else barycenter.reshape((-1))
 
 
 def _set_weights(w, n):
@@ -70,11 +72,13 @@ def _set_weights(w, n):
 
 
 def __soft_dtw_func(
-    barycenter_to_eval, timeseries_data, weights, barycenter_shape, gamma
+        barycenter_to_eval, timeseries_data, weights, barycenter_shape, gamma
 ):
     # Compute objective value and grad at Z.
     barycenter_to_eval = barycenter_to_eval.reshape(barycenter_shape)
     barycenter_gradient = np.zeros_like(barycenter_to_eval)
+    if barycenter_to_eval.ndim == 1:
+        barycenter_gradient = barycenter_to_eval.reshape((-1, 1))
     objective = 0
 
     if len(timeseries_data) != len(weights):
@@ -94,13 +98,13 @@ def __soft_dtw_func(
 
 
 def soft_dtw_barycenter(
-    timeseries_data,
-    gamma=1.0,
-    weights=None,
-    method="L-BFGS-B",
-    tol=1e-3,
-    max_iter=50,
-    barycenter=None,
+        timeseries_data,
+        gamma=1.0,
+        weights=None,
+        method="L-BFGS-B",
+        tol=1e-3,
+        max_iter=50,
+        init_barycenter=None,
 ):
     """Compute barycenter (time series averaging) under the soft-DTW [1]
     geometry.
@@ -124,7 +128,7 @@ def soft_dtw_barycenter(
         Tolerance of the method used.
     max_iter: int
         Maximum number of iterations.
-    barycenter: array or None (default: None)
+    init_barycenter: array or None (default: None)
         Initial barycenter to start from for the optimization process.
         If `None`, Euclidean barycenter is used as a starting point.
 
@@ -159,36 +163,32 @@ def soft_dtw_barycenter(
     timeseries_data_ = np.nan_to_num(to_time_series_dataset(timeseries_data))
     weights = _set_weights(weights, len(timeseries_data))
 
-    if barycenter is None:
+    if init_barycenter is None:
         # does a simple numpy.average using the provided weights
         if check_equal_size(timeseries_data_):
             # noinspection PyTypeChecker
-            barycenter = euclidean_barycenter(timeseries_data_, weights=weights)
+            init_barycenter = euclidean_barycenter(timeseries_data_, weights=weights)
         else:
             # noinspection PyTypeChecker
-            barycenter = euclidean_barycenter(
+            init_barycenter = euclidean_barycenter(
                 TimeSeriesResampler(sz=timeseries_data_.shape[1]).fit_transform(
                     timeseries_data_
                 ),
                 weights=weights,
             )
-    barycenter_shape = barycenter.shape
-    # timeseries_data = numpy.array(
-    #     [to_time_series(d, remove_nans=True) for d in timeseries_data]
-    # ) Unnecessary step from previous alg
 
     res = minimize(
         lambda a: __soft_dtw_func(
             barycenter_to_eval=a,
             timeseries_data=timeseries_data,
             weights=weights,
-            barycenter_shape=barycenter_shape,
+            barycenter_shape=init_barycenter.shape,
             gamma=gamma,
         ),
-        barycenter.ravel(),
+        init_barycenter.ravel(),
         method=method,
         jac=True,
         tol=tol,
-        options=dict(maxiter=max_iter, disp=False),
+        options={"maxiter": max_iter, "disp": False},
     )
-    return res.x.reshape(barycenter_shape)
+    return res.x.reshape(init_barycenter.shape)
