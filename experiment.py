@@ -33,7 +33,8 @@ def trigonometric_drift(x: np.ndarray, alpha: np.ndarray, beta: np.ndarray):
     return np.sin(alpha * x) + np.cos(beta * x)
 
 
-SIMULATIONS_MODES = ['lc', 'lc-vl', 'gbm', 'oup', 'trig', 'trig-vl']
+SIMULATIONS_MODES = ['lc', 'gbm', 'oup', 'trig']
+SIMULATIONS_MODES.extend([f"{m}-vl" for m in SIMULATIONS_MODES])
 
 parser = argparse.ArgumentParser(
     description="Runs an experiment to determine clustering performance vs specified data.")
@@ -83,21 +84,33 @@ match args.simulation_mode:
         simulation_set = {f"L-Drift|C-Diffusion variable length {i}": STANDARD_MODEL(
             clusters_definitions=[generator.TimeSeries(
                 sz=len_gen(),
-                drift=partial(trigonometric_drift, alpha=n_gen(), beta=n_gen()),
+                drift=partial(linear_drift, mu=n_gen(), beta=n_gen()),
                 diffusion=partial(constant_diffusion, constant=n_gen()),
                 initial_value=n_gen()
-            ) for _ in range(NUMBER_OF_CENTROIDS)])
+            ) for _ in range(NUMBER_OF_CENTROIDS)],
+            identifier="L-Drift|C-Diffusion variable length")
             for i in range(NUMBER_OF_SETS)}
 
     case str(name) if "gbm" in name:
         simulation_set = {f"Geometric Brownian Motion {i}": STANDARD_MODEL(
             clusters_definitions=[STANDARD_SERIES(
-                drift=partial(gbm_drift_and_diffusion, mu=n_gen()),
-                diffusion=partial(gbm_drift_and_diffusion, mu=n_gen()),
+                drift=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
+                diffusion=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
                 initial_value=n_gen()
             ) for _ in range(NUMBER_OF_CENTROIDS)],
             identifier="Geometric Brownian Motion")
             for i in range(NUMBER_OF_SETS)}
+    case str(name) if "gbm-vl" in name:
+        simulation_set = {f"L-Drift|C-Diffusion variable length {i}": STANDARD_MODEL(
+            clusters_definitions=[generator.TimeSeries(
+                sz=len_gen(),
+                drift=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
+                diffusion=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
+                initial_value=n_gen()
+            ) for _ in range(NUMBER_OF_CENTROIDS)],
+            identifier="L-Drift|C-Diffusion variable length")
+            for i in range(NUMBER_OF_SETS)}
+
     case str(name) if "oup" in name:
         simulation_set = {f"Ornstein-Uhlenbeck Process {i}": STANDARD_MODEL(
             clusters_definitions=[STANDARD_SERIES(
@@ -107,6 +120,17 @@ match args.simulation_mode:
             ) for _ in range(NUMBER_OF_CENTROIDS)],
             identifier="Ornstein-Uhlenbeck Process")
             for i in range(NUMBER_OF_SETS)}
+    case str(name) if "oup-vl" in name:
+        simulation_set = {f"L-Drift|C-Diffusion variable length {i}": STANDARD_MODEL(
+            clusters_definitions=[generator.TimeSeries(
+                sz=len_gen(),
+                drift=partial(oup_drift, theta=n_gen(), mean=n_gen()),
+                diffusion=partial(constant_diffusion, constant=n_gen()),
+                initial_value=n_gen()
+            ) for _ in range(NUMBER_OF_CENTROIDS)],
+            identifier="L-Drift|C-Diffusion variable length")
+            for i in range(NUMBER_OF_SETS)}
+
     case str(name) if "trig" in name:
         simulation_set = {f"Trigonometric non-linear {i}": STANDARD_MODEL(
             clusters_definitions=[STANDARD_SERIES(
@@ -125,6 +149,7 @@ match args.simulation_mode:
                 initial_value=n_gen()
             ) for _ in range(NUMBER_OF_CENTROIDS)])
             for i in range(NUMBER_OF_SETS)}
+
     case _:
         raise AttributeError(
             f"Provided --simulation-mode={args.simulation_mode} is not supported. Must be inside {SIMULATIONS_MODES}")

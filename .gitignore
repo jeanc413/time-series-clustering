@@ -1,3 +1,6 @@
+### Project defined files
+bibs/
+
 ### VisualStudioCode template
 .vscode/*
 !.vscode/settings.json
@@ -267,4 +270,5 @@ fabric.properties
 
 # Android studio 3.1+ serialized cache file
 .idea/caches/build_file_checksums.ser
+
 
