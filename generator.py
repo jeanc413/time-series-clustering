@@ -214,6 +214,8 @@ class TimeSeriesSet:
             from the same or different process. The mean and variance of the process remain the same, but the
             generation will be independent for each timeseries dimension.
             Default is False.
+    identifier : str
+        Name that can be assigned to this series set for user identification.
 
     """
 
@@ -251,6 +253,14 @@ class TimeSeriesSet:
                 "the cluster definition test, but "
                 f"{len(self.test_n_ts)=}, {len(self.train_n_ts)=}, {len(self.clusters_definitions)=}"
             )
+
+    def detach_data(self):
+        """Sets all generated data in this set to default values."""
+        self.train_set = []
+        self.test_set = []
+        self.centroids = []
+        self.train_labels = []
+        self.test_labels = []
 
     def generate_set(self):
         """Generates the set of time series modeled on this class.
@@ -427,6 +437,7 @@ class Experiment:
                         "series_name": series_name,
                         "alg_model": alg_model,
                         "iterations": alg.iterations if "iterations" in dir(alg) else None,
+                        "results": alg.results if "results" in dir(alg) else None,
                         **ClusterScores(true_labels, predict_labels).get_scores(),
                     }
                 )
@@ -441,8 +452,14 @@ class Experiment:
 
         return results
 
-    def run_experiment(self):
+    def run_experiment(self, detach_data: bool = True):
         """Takes all TimeSeriesSets stored in this class and runs them through the user models defined in this class.
+
+        Parameters
+        ----------
+        detach_data : bool
+            Whether to detach the data from the TimeSeriesSet after all models have been trained.
+            This is intended to save memory
 
         Returns
         -------
@@ -454,6 +471,9 @@ class Experiment:
             if not series_set.train_set:
                 series_set: TimeSeriesSet = series_set.generate_set()
             self.results.extend(self.run_models(series_name, series_set))
+            if detach_data:
+                series_set.detach_data()
+
         if self.failed:
             warn(
                 f"While running current experiment, a total of {len(self.failed)} where raised.\n"
