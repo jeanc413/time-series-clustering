@@ -94,8 +94,8 @@ match args.simulation_mode:
     case str(name) if "gbm" in name:
         simulation_set = {f"Geometric Brownian Motion {i}": STANDARD_MODEL(
             clusters_definitions=[STANDARD_SERIES(
-                drift=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
-                diffusion=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
+                drift=partial(gbm_drift_and_diffusion, mu=n_gen() / args.normal_loc),  # drift is percentual
+                diffusion=partial(gbm_drift_and_diffusion, mu=n_gen() / args.normal_loc),  # diffusion is percentual
                 initial_value=n_gen()
             ) for _ in range(NUMBER_OF_CENTROIDS)],
             identifier="Geometric Brownian Motion")
@@ -104,8 +104,8 @@ match args.simulation_mode:
         simulation_set = {f"L-Drift|C-Diffusion variable length {i}": STANDARD_MODEL(
             clusters_definitions=[generator.TimeSeries(
                 sz=len_gen(),
-                drift=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
-                diffusion=partial(gbm_drift_and_diffusion, mu=n_gen() / 10),
+                drift=partial(gbm_drift_and_diffusion, mu=n_gen() / args.normal_loc),
+                diffusion=partial(gbm_drift_and_diffusion, mu=n_gen() / args.normal_loc),
                 initial_value=n_gen()
             ) for _ in range(NUMBER_OF_CENTROIDS)],
             identifier="L-Drift|C-Diffusion variable length")

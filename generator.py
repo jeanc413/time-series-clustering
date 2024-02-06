@@ -358,13 +358,17 @@ class Experiment:
     def check_implemented_predict(model_name: str):
         """Checks if a provided model contains predict
 
+        Check IMPLEMENTED_PREDICT_FLAGS for appropiate flags.
+
         Parameters
         ----------
         model_name : str
+            Name of the model to be verified for predict.
 
         Returns
         -------
         implemented : bool
+            True if the model contains a predict method, False otherwise.
 
         """
         implemented = True
@@ -377,6 +381,21 @@ class Experiment:
 
     @staticmethod
     def check_implemented(model_name: str):
+        """Check if the model is implemented for this experiment class.
+
+        Check IMPLEMENTED_MODELS for appropriate flags to name your models.
+
+        Parameters
+        ----------
+        model_name : str
+            Name of the model.
+
+        Returns
+        -------
+        bool
+            True if the model name is implemented to be used in this class. False otherwise.
+
+        """
         implemented = True
         for flag in IMPLEMENTED_MODELS:
             if flag in model_name:

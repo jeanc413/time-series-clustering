@@ -1,5 +1,4 @@
-from numbers import Number
-from typing import Any, Union
+from typing import Any
 
 import numba.typed as nbt
 import numpy as np
@@ -15,7 +14,7 @@ from sklearn.metrics import (
 )
 
 
-def number_try_parse(obj: Any) -> Union[Number, False]:
+def number_try_parse(obj: Any):
     """Given a certain object, tries to parse it to a float or an integer accordingly.
 
     If the parsing is not possible, returns False.
