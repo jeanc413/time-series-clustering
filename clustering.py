@@ -16,12 +16,11 @@ from tslearn.metrics import (
 )
 
 from barycenter import soft_dtw_barycenter, euclidean_barycenter
-from utils import c_euclidean, euclidean_distance_lc, number_try_parse
+from utils import c_euclidean, number_try_parse
 
 
 class EmptyClusterError(Exception):
-    """Raised when a cluster is empty.
-    """
+    """Raised when a cluster is empty."""
 
     def __init__(self, clarification: str = ""):
         super().__init__()
@@ -299,7 +298,7 @@ class CKMeans:
         self.gamma = gamma
         self.tol = tol
 
-        if self.gamma is not None:
+        if self.gamma:
             self.distance_measure = functools.partial(
                 self.distance_measure, gamma=self.gamma
             )
@@ -308,17 +307,12 @@ class CKMeans:
             )
 
         # initialize clustering parameters
-        self.max_features = max(ser.shape for ser in series_list)
         self.results: list[dict] = []
         self.criteria = "Initialized"
         self.iterations = 0
         self.inertia: int | None = None
         self.clusters = np.zeros(len(series_list))
-        self.clusters_old = np.zeros(len(series_list))
         self.centroids = []
-        self.centroids_old = []
-        self.__old_score = np.inf
-        self.score = np.inf
         self.method: Literal["random", "provided", ""] = ""
 
     def iterate(self, initial_centroid: list[np.ndarray]):
@@ -338,17 +332,11 @@ class CKMeans:
         """
         iterations = 0
         centroids = initial_centroid
-        clusters = np.apply_along_axis(
-            np.argmin,
-            axis=1,
-            arr=self.distance_measure(self.series_list, centroids),
-        )
         inertia = np.inf
         for _ in range(self.max_iterations):
             iterations += 1
             inertia_old = inertia
 
-            # update clusters_definitions
             distances = self.distance_measure(self.series_list, centroids)
             clusters = np.apply_along_axis(
                 np.argmin,
@@ -356,21 +344,18 @@ class CKMeans:
                 arr=distances,
             )
             inertia = self.compute_inertia(distances, clusters)
-
-            # update centroids
-            centroids = self._compute_centroid(clusters, current_centroids=centroids)
-
-            # check for convergence
             if np.abs(inertia_old - inertia) < self.tol:
                 criteria = "Converged by inertia"
                 break
+
+            centroids = self._compute_centroid(clusters, current_centroids=centroids)
 
         else:
             criteria = f"Reached iteration limit at iteration={iterations}"
             warn("Algorithm stopped due to exceeding max iterations.")
 
         return {"clusters": clusters, "centroids": centroids,
-                "inertia": inertia, "iterations": iterations, "criteria": criteria}
+                "inertia": inertia, "last-inertia": inertia_old, "iterations": iterations, "criteria": criteria}
 
     def fit(self, centroids: list[np.ndarray] | None = None):
         """Run K-Means to this class time series list.
@@ -430,65 +415,6 @@ class CKMeans:
         self.iterations = best_result["iterations"]
         self.criteria = best_result["criteria"]
         return self.clusters
-
-    def __fit(self, centroids=None):
-        """
-        Class method to execute clustering.
-
-        Parameters
-        ----------
-        centroids: list or None
-            List of tensors cores containing the centroid-tensors used to initialize the algorithm.
-            If `None` are provided, they randomly initialized from the provided cores
-
-        Returns
-        -------
-        numpy.ndarray containing the assigned cluster for each provided SubTensor object.
-
-        """
-        warn("This method is deprecated and to be removed for latest version.")
-        # initialize centroids
-        if centroids is None:
-            self.centroids = self.state.choice(
-                len(self.series_list), self.k, replace=False
-            )
-            self.centroids = [self.series_list[i] for i in self.centroids]
-        else:
-            self.centroids = centroids
-
-        # Optimization
-        for _ in range(self.max_iterations):
-            self.iterations += 1
-            self.centroids_old = centroids_old = self.centroids.copy()
-            self.clusters_old = clusters_old = self.clusters.copy()
-
-            # update clusters_definitions
-            self.clusters = np.apply_along_axis(
-                np.argmin,
-                axis=1,
-                arr=self.distance_measure(self.series_list, self.centroids),
-            )
-
-            # update centroids
-            self.centroids = self._get_centroids()
-
-            # check for convergence
-            if all(self._is_converged(centroids_old, clusters_old)):
-                self.criteria = "Converged"
-                break
-        else:
-            self.criteria = f"Reached iteration limit at iteration={self.iterations}"
-            warn("Algorithm stopped due to exceeding max iterations.")
-
-        return self.clusters
-
-    def _get_cluster_labels(self, clusters):
-        # Puts together on an array the assigned cluster for each tensor
-        labels = np.empty(len(self.series_list))
-        for cluster_idx, cluster in enumerate(clusters):
-            for sample_idx in cluster:
-                labels[sample_idx] = cluster_idx
-        return labels
 
     def predict(self, observation: np.ndarray):
         """Given an observation of the same dimension as the timeseries defined in this class,
@@ -555,47 +481,28 @@ class CKMeans:
                 raise e
         return centroids
 
-    def _get_centroids(self):
-        clusters_list = (
-            np.where(self.clusters == a, 1, 0).nonzero()[0]
-            for a in range(len(self.centroids))
-        )
-        series_in_cluster = (
-            itemgetter(*cluster)(self.series_list) for cluster in clusters_list
-        )
-        # if cluster is unitary, the centroid is the cluster unit q itself
-        try:
-            centroids = [
-                self.compute_barycenter(clusters)
-                if isinstance(clusters, tuple)
-                else clusters
-                for clusters in series_in_cluster
-            ]
-        except TypeError as e:
-            if "itemgetter expected 1 argument, got 0" in str(e):
-                raise EmptyClusterError("Couldn't compute centroid.")
-            else:
-                raise e
-        return centroids
-
     @staticmethod
     def compute_inertia(distances: np.ndarray, assignments: np.ndarray, squared: bool = True):
+        """Computation of inertia as measure of how well the data is clustered by K-Means.
+
+        It is calculated by averaging the distance between each data point, and it's assigned centroid squared.
+
+        Parameters
+        ----------
+        distances : np.ndarray
+            Array containing distances between each time series, and it's centroid
+        assignments : np.ndarray
+            Array containing the label to which cluster each time series is assigned.
+        squared : bool (default: True)
+            Whether the inertia sum is squared or not.
+
+        Returns
+        -------
+        float
+            Computed inertia
+
+        """
         inertia = distances[np.arange(len(distances)), assignments]
         if squared:
             inertia = inertia ** 2
         return np.sum(inertia) / len(distances)
-
-    def compute_score(self):
-        return sum(
-            euclidean_distance_lc(np.nan_to_num(a), np.nan_to_num(b))
-            for a, b in zip(self.centroids, self.centroids_old)
-        )
-
-    def _is_converged(self, centroids_old, clusters_old):
-        # Verify if there's no more improvement for the current iteration and returns True as converging criteria
-        self.__old_score = self.score
-        self.score = self.compute_score()
-        yield self.__old_score <= self.score
-        yield all(a.shape == b.shape for a, b in zip(centroids_old, self.centroids))
-        yield np.allclose(clusters_old, self.clusters)
-        yield all(np.allclose(a, b) for a, b in zip(centroids_old, self.centroids))
