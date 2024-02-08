@@ -104,9 +104,7 @@ def __c_euclidean_lc(
 def __self_euclidean_lc(series_list: nbt.List[np.ndarray]):
     dists = np.zeros((len(series_list), len(series_list)), dtype=np.float64)
     for i in prange(len(series_list)):
-        for j in prange(len(series_list)):
-            if i == j:
-                break
+        for j in prange(i):
             # warning on uint to int is not an issue, Numba gets confused with the integers i, j in parallel mode.
             dists[i, j] = euclidean_distance_lc(s1=series_list[i], s2=series_list[j])
     return dists + dists.T
