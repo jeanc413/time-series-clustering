@@ -149,7 +149,7 @@ class TimeSeries:
         if not seed:
             seed = np.random.default_rng()
 
-        size = self.sz if isinstance(self.sz, int) else self.sz()
+        size = self.sz() if isinstance(self.sz, Callable) else self.sz
         init_val = (
             self.initial_value()
             if isinstance(self.initial_value, Callable)
@@ -358,7 +358,7 @@ class Experiment:
     def check_implemented_predict(model_name: str):
         """Checks if a provided model contains predict
 
-        Check IMPLEMENTED_PREDICT_FLAGS for appropiate flags.
+        Check IMPLEMENTED_PREDICT_FLAGS for appropriate flags.
 
         Parameters
         ----------
