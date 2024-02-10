@@ -33,8 +33,33 @@ def trigonometric_drift(x: np.ndarray, alpha: np.ndarray, beta: np.ndarray):
     return np.sin(alpha * x) + np.cos(beta * x)
 
 
+def multivariate_drift(x: np.ndarray,
+                       a: np.ndarray, b: np.ndarray,  # linear drift
+                       mu: np.ndarray,  # gbm drift
+                       theta: np.ndarray, mean: np.ndarray,  # oup drift
+                       alpha: np.ndarray, beta: np.ndarray  # trig drift
+                       ) -> np.ndarray:
+    """Multivariate drift combining linear drift, gbm, oup and trigonometric drift."""
+    result = np.empty(4)
+    result[0] = a * x[0] + b
+    result[1] = x[1] * mu
+    result[2] = theta * (mean - x[2])
+    result[3] = np.sin(alpha * x[3]) + np.cos(beta * x[3])
+    return result
+
+
+def multivariate_diffusion(x: np.ndarray,
+                           c_l: np.ndarray,  # linear diffusion
+                           mu: np.ndarray,  # gbm diffusion
+                           c_o: np.ndarray,  # oup diffusion
+                           c_t: np.ndarray  # trig diffusion
+                           ) -> np.ndarray:
+    """Multivariate diffusion combining constant drift, gbm, constant and constant."""
+    return np.array([c_l, mu * x[1], c_o, c_t])
+
+
 if __name__ == "__main__":
-    SIMULATIONS_MODES = ['lc', 'gbm', 'oup', 'trig']
+    SIMULATIONS_MODES = ['lc', 'gbm', 'oup', 'trig', 'mv']
     SIMULATIONS_MODES.extend([f"{m}-vl" for m in SIMULATIONS_MODES])
 
     parser = argparse.ArgumentParser(
@@ -72,7 +97,7 @@ if __name__ == "__main__":
                              seed=experiment_seed)
 
     match args.simulation_mode:
-        case str(name) if "lc" in name:
+        case 'lc':
             simulation_set = {f"Linear Drift with Constant Diffusion {i}": STANDARD_MODEL(
                 clusters_definitions=[STANDARD_SERIES(
                     drift=partial(linear_drift, mu=n_gen(), beta=n_gen()),
@@ -81,7 +106,7 @@ if __name__ == "__main__":
                 ) for _ in range(NUMBER_OF_CENTROIDS)],
                 identifier="Linear Drift with Constant Diffusion")
                 for i in range(NUMBER_OF_SETS)}
-        case str(name) if "lc-vl" in name:
+        case "lc-vl":
             simulation_set = {f"Linear Drift with Constant Diffusion variable length {i}": STANDARD_MODEL(
                 clusters_definitions=[generator.TimeSeries(
                     sz=len_gen(),
@@ -92,7 +117,7 @@ if __name__ == "__main__":
                 identifier="Linear Drift with Constant Diffusion variable length")
                 for i in range(NUMBER_OF_SETS)}
 
-        case str(name) if "gbm" in name:
+        case "gbm":
             simulation_set = {f"Geometric Brownian Motion {i}": STANDARD_MODEL(
                 clusters_definitions=[STANDARD_SERIES(
                     drift=partial(gbm_drift_and_diffusion, mu=n_gen() / args.normal_loc),  # drift is percentual
@@ -101,7 +126,7 @@ if __name__ == "__main__":
                 ) for _ in range(NUMBER_OF_CENTROIDS)],
                 identifier="Geometric Brownian Motion")
                 for i in range(NUMBER_OF_SETS)}
-        case str(name) if "gbm-vl" in name:
+        case "gbm-vl":
             simulation_set = {f"Geometric Brownian Motion variable length {i}": STANDARD_MODEL(
                 clusters_definitions=[generator.TimeSeries(
                     sz=len_gen(),
@@ -112,7 +137,7 @@ if __name__ == "__main__":
                 identifier="Geometric Brownian Motion variable length")
                 for i in range(NUMBER_OF_SETS)}
 
-        case str(name) if "oup" in name:
+        case "oup":
             simulation_set = {f"Ornstein-Uhlenbeck Process {i}": STANDARD_MODEL(
                 clusters_definitions=[STANDARD_SERIES(
                     drift=partial(oup_drift, theta=n_gen(), mean=n_gen()),
@@ -121,7 +146,7 @@ if __name__ == "__main__":
                 ) for _ in range(NUMBER_OF_CENTROIDS)],
                 identifier="Ornstein-Uhlenbeck Process")
                 for i in range(NUMBER_OF_SETS)}
-        case str(name) if "oup-vl" in name:
+        case "oup-vl":
             simulation_set = {f"Ornstein-Uhlenbeck Process variable length {i}": STANDARD_MODEL(
                 clusters_definitions=[generator.TimeSeries(
                     sz=len_gen(),
@@ -132,7 +157,7 @@ if __name__ == "__main__":
                 identifier="Ornstein-Uhlenbeck Process variable length")
                 for i in range(NUMBER_OF_SETS)}
 
-        case str(name) if "trig" in name:
+        case "trig":
             simulation_set = {f"Trigonometric non-linear {i}": STANDARD_MODEL(
                 clusters_definitions=[STANDARD_SERIES(
                     drift=partial(trigonometric_drift, alpha=n_gen(), beta=n_gen()),
@@ -141,7 +166,7 @@ if __name__ == "__main__":
                 ) for _ in range(NUMBER_OF_CENTROIDS)],
                 identifier="Trigonometric non-linear")
                 for i in range(NUMBER_OF_SETS)}
-        case str(name) if "trig-vl" in name:
+        case "trig-vl":
             simulation_set = {f"Trigonometric non-linear variable length {i}": STANDARD_MODEL(
                 clusters_definitions=[generator.TimeSeries(
                     sz=len_gen(),
@@ -152,9 +177,34 @@ if __name__ == "__main__":
                 identifier="Trigonometric non-linear variable length")
                 for i in range(NUMBER_OF_SETS)}
 
+        case "mv":
+            simulation_set = {f"Multivariate {i}": STANDARD_MODEL(
+                clusters_definitions=[STANDARD_SERIES(
+                    drift=partial(multivariate_drift, a=n_gen(), b=n_gen(), mu=n_gen() / args.normal_loc, theta=n_gen(),
+                                  mean=n_gen(),
+                                  alpha=n_gen(), beta=n_gen()),
+                    diffusion=partial(multivariate_diffusion, c_l=n_gen(), mu=n_gen() / args.normal_loc, c_o=n_gen(),
+                                      c_t=n_gen()),
+                    initial_value=n_gen(size=4)
+                ) for _ in range(NUMBER_OF_CENTROIDS)],
+                identifier="Multivariate")
+                for i in range(NUMBER_OF_SETS)}
+        case "mv-vl":
+            simulation_set = {f"Multivariate variable length {i}": STANDARD_MODEL(
+                clusters_definitions=[generator.TimeSeries(
+                    sz=len_gen(),
+                    drift=partial(multivariate_drift, a=n_gen(), b=n_gen(), mu=n_gen() / args.normal_loc,
+                                  theta=n_gen(), mean=n_gen(), alpha=n_gen(), beta=n_gen()),
+                    diffusion=partial(multivariate_diffusion, c_l=n_gen(), mu=n_gen() / args.normal_loc, c_o=n_gen(),
+                                      c_t=n_gen()),
+                    initial_value=n_gen(size=4)
+                ) for _ in range(NUMBER_OF_CENTROIDS)],
+                identifier="Multivariate variable length")
+                for i in range(NUMBER_OF_SETS)}
+
         case _:
             raise AttributeError(
-                f"Provided --simulation-mode={args.simulation_mode} is not supported. Must be inside {SIMULATIONS_MODES}")
+                f"--simulation-mode={args.simulation_mode} not supported. Must be in {SIMULATIONS_MODES}")
 
     experiment = generator.Experiment(
         series_sets=simulation_set,
@@ -190,7 +240,7 @@ if __name__ == "__main__":
     t_f = time()
     print(f"Processing time of experiment {args.simulation_mode} lasted {t_f - t_0}.")
     print(f"Performance counter of experiment {args.simulation_mode} lasted {p_f - p_0}.")
-    print()
+    print("")
 
     Path('./experiments-results').mkdir(exist_ok=True)
     with open(f"./experiments-results/{args.simulation_mode}.experiment", 'wb') as file:
