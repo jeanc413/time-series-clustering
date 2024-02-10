@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from experiment import linear_drift, constant_diffusion, gbm_drift_and_diffusion, oup_drift, trigonometric_drift
+from experiment import (linear_drift, constant_diffusion, gbm_drift_and_diffusion, oup_drift, trigonometric_drift,
+                        multivariate_drift, multivariate_diffusion)
 from clustering import CKMeans
 
 
