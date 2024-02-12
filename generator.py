@@ -63,6 +63,7 @@ from warnings import warn
 
 import numpy as np
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
 from utils import ClusterScores
 
@@ -486,7 +487,7 @@ class Experiment:
             Results of cross running all models and series sets in this class.
 
         """
-        for series_name, series_set in self.series_sets.items():
+        for series_name, series_set in tqdm(self.series_sets.items()):
             if not series_set.train_set:
                 series_set: TimeSeriesSet = series_set.generate_set()
             self.results.extend(self.run_models(series_name, series_set))
