@@ -46,7 +46,7 @@ data.to_excel("raw_data.xlsx")
 summarized_results = (data
                       .assign(algorithm=lambda df: df.algorithm.apply(str),
                               distance_measure=lambda df: refactor_distance_measure(df))
-                      .drop(columns=['iterations'])
+                      .drop(columns=['iterations', 'gamma', 'min_pts'])
                       .groupby(['simulation_mode', 'algorithm', 'distance_measure'])
                       .describe())
 summarized_results.to_excel("summary.xlsx")
