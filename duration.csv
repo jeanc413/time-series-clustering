@@ -1,0 +1,11 @@
+simulation_mode,time,perf_counter
+Linear Drift with Constant Diffusion,3395.7658,3395.7659
+Geometric Brownian Motion,4621.824,4621.824
+Ornstein-Uhlenbeck Process,2546.68,2546.68
+Trigonometric,4609.091,4609.091
+Multivariate,9865.5107,9865.5108
+Linear Drift with Constant Diffusion,2909.3608,2909.3604
+Geometric Brownian Motion Variable Length,4639.1832,4639.1828
+Ornstein-Uhlenbeck Process Variable Length,2637.4829,2637.483
+Trigonometric Variable Length,4955.5905, 4955.5912
+Multivariate Variable Length,9471.7076,9471.7076
