@@ -88,7 +88,7 @@ if __name__ == "__main__":
     NUMBER_OF_CENTROIDS = args.num_clusters
 
     len_seed = np.random.default_rng(SEED)
-    len_gen = partial(len_seed.integers, low=45, high=55)
+    len_gen = partial(len_seed.integers, low=80, high=120)
     n_gen = partial(np.random.default_rng(SEED).normal, loc=args.normal_loc, scale=args.normal_scale)
 
     experiment_seed = np.random.default_rng(SEED)
