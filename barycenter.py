@@ -1,4 +1,5 @@
 # Code for soft DTW is by Mathieu Blondel under Simplified BSD license
+# This code section is taken from TSLearn barycenter module and modified for compatibility reasons.
 import numpy as np
 from scipy.optimize import minimize
 from tslearn.metrics import SquaredEuclidean, SoftDTW
